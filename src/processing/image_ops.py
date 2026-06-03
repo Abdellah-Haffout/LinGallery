@@ -22,7 +22,7 @@ except ImportError:
     HAS_EXIFREAD = False
 
 
-def _save_in_place(img: Image.Image, path: str) -> None:
+def _save_image(img: Image.Image, path: str) -> None:
     """Save a PIL image back to its original path, preserving format."""
     suffix = Path(path).suffix.lower()
     fmt_map = {
@@ -40,7 +40,7 @@ def rotate(path: str, degrees: int) -> bool:
     try:
         img = ImageOps.exif_transpose(Image.open(path))
         img = img.rotate(degrees, expand=True)
-        _save_in_place(img, path)
+        _save_image(img, path)
         return True
     except Exception:
         return False
@@ -51,7 +51,7 @@ def flip_horizontal(path: str) -> bool:
     try:
         img = ImageOps.exif_transpose(Image.open(path))
         img = ImageOps.mirror(img)
-        _save_in_place(img, path)
+        _save_image(img, path)
         return True
     except Exception:
         return False
@@ -62,13 +62,13 @@ def flip_vertical(path: str) -> bool:
     try:
         img = ImageOps.exif_transpose(Image.open(path))
         img = ImageOps.flip(img)
-        _save_in_place(img, path)
+        _save_image(img, path)
         return True
     except Exception:
         return False
 
 
-def crop(path: str, x: int, y: int, width: int, height: int) -> bool:
+def crop(path: str, x: int, y: int, width: int, height: int, dest_path: str | None = None) -> bool:
     """Crop the image to the given pixel rectangle."""
     try:
         img = ImageOps.exif_transpose(Image.open(path))
@@ -78,7 +78,7 @@ def crop(path: str, x: int, y: int, width: int, height: int) -> bool:
         bottom = max(top + 1, min(y + height, img.height))
         box = (left, top, right, bottom)
         img = img.crop(box)
-        _save_in_place(img, path)
+        _save_image(img, dest_path or path)
         return True
     except Exception:
         return False

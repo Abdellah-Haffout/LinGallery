@@ -160,6 +160,9 @@ class ImageViewer(QWidget):
         self._rename_overlay.hide()
         self._notice_overlay = _NoticeOverlay(self)
         self._notice_overlay.hide()
+        self._crop_save_dialog = _CropSaveDialog(self)
+        self._crop_save_dialog.save_requested.connect(self._execute_crop)
+        self._crop_save_dialog.hide()
 
     # ─────────────────────────────────────────────────────────────────
     # Public API
@@ -336,12 +339,28 @@ class ImageViewer(QWidget):
     def _apply_crop(self):
         if not self._current_path or not self._pending_crop_rect:
             return
+        self._crop_save_dialog.open()
+
+    def _execute_crop(self, choice: str):
+        if not self._current_path or not self._pending_crop_rect:
+            return
         x, y, width, height = self._pending_crop_rect
-        if image_ops.crop(self._current_path, x, y, width, height):
+        
+        if choice == "copy":
+            dest_path = str(_unique_destination(Path(self._current_path)))
+        else:
+            dest_path = self._current_path
+            
+        if image_ops.crop(self._current_path, x, y, width, height, dest_path=dest_path):
             self._pending_crop_rect = None
             self._crop_bar.hide()
             self._view.cancel_crop_mode()
-            self._reload_current()
+            if choice == "copy":
+                self.image_changed.emit("", dest_path)
+                self._image_list.insert(self._current_index + 1, dest_path)
+                self.next_image()
+            else:
+                self._reload_current()
         else:
             self._show_operation_failed("Crop failed")
 
@@ -483,7 +502,9 @@ class ImageViewer(QWidget):
         elif k in (Qt.Key_Left, Qt.Key_A):
             self.prev_image()
         elif k == Qt.Key_Escape:
-            if self._crop_bar.isVisible():
+            if self._crop_save_dialog.isVisible():
+                self._crop_save_dialog.hide()
+            elif self._crop_bar.isVisible():
                 self._cancel_crop()
             elif self._notice_overlay.isVisible():
                 self._notice_overlay.hide()
@@ -522,6 +543,8 @@ class ImageViewer(QWidget):
             self._rename_overlay.reposition()
         if hasattr(self, "_notice_overlay"):
             self._notice_overlay.reposition()
+        if hasattr(self, "_crop_save_dialog"):
+            self._crop_save_dialog.reposition()
 
 
 class _CropActionBar(QWidget):
@@ -682,6 +705,73 @@ class _RenameOverlay(QFrame):
 
     def _cancel(self):
         self.hide()
+
+
+class _CropSaveDialog(QFrame):
+    save_requested = Signal(str)
+
+    def __init__(self, parent: QWidget):
+        super().__init__(parent)
+        self.setObjectName("cropSaveDialog")
+        self.setStyleSheet(f"""
+            QFrame#cropSaveDialog {{
+                background-color: {DarkPalette.SURFACE_CONTAINER};
+                border: 1px solid {DarkPalette.OUTLINE};
+                border-radius: 8px;
+            }}
+        """)
+        self.setFixedSize(480, 180)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(12)
+
+        title = QLabel("Save Crop")
+        title.setStyleSheet(
+            f"color: {DarkPalette.ON_SURFACE}; font-size: 16px; font-weight: 800;"
+        )
+        layout.addWidget(title)
+
+        message = QLabel("How do you want to save the cropped image?")
+        message.setWordWrap(True)
+        message.setStyleSheet(
+            f"color: {DarkPalette.ON_SURFACE_VARIANT}; font-size: 13px;"
+        )
+        layout.addWidget(message, stretch=1)
+
+        buttons = QHBoxLayout()
+        self._cancel_btn = _TextButton("Cancel", self.hide)
+        self._overwrite_btn = _TextButton("Overwrite", lambda: self._on_choice("overwrite"))
+        self._copy_btn = _TextButton("Save as Copy", lambda: self._on_choice("copy"), filled=True)
+        
+        buttons.addWidget(self._cancel_btn)
+        buttons.addStretch()
+        buttons.addWidget(self._overwrite_btn)
+        buttons.addWidget(self._copy_btn)
+        layout.addLayout(buttons)
+
+    def open(self):
+        self.reposition()
+        self.show()
+        self.raise_()
+        self._copy_btn.setFocus()
+
+    def reposition(self):
+        parent = self.parentWidget()
+        if not parent:
+            return
+        x = max(16, (parent.width() - self.width()) // 2)
+        y = max(16, (parent.height() - self.height()) // 2)
+        self.setGeometry(QRect(x, y, self.width(), self.height()))
+
+    def keyPressEvent(self, event: QKeyEvent):
+        if event.key() == Qt.Key_Escape:
+            self.hide()
+        else:
+            super().keyPressEvent(event)
+
+    def _on_choice(self, choice: str):
+        self.hide()
+        self.save_requested.emit(choice)
 
 
 class _NoticeOverlay(QFrame):
