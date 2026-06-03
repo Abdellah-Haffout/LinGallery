@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QStatusBar
 )
 from PySide6.QtCore import Qt, QSize
+from pathlib import Path
 
 from core.constants import DarkPalette, AppConst
 from logic.library_indexer import LibraryIndexer
@@ -73,6 +74,8 @@ class MainWindow(QMainWindow):
         # Shared image manager (one pool for whole app)
         self._img_manager = ImageManager(self)
         self._indexer: LibraryIndexer | None = None
+        self._scan_roots = list(AppConst.DEFAULT_SCAN_ROOTS)
+        self._pending_album_select: str | None = None
 
         self._build_ui()
         self.setStyleSheet(_APP_STYLE)
@@ -120,9 +123,10 @@ class MainWindow(QMainWindow):
         gallery_lay.addWidget(right, stretch=1)
 
         # ── Image Viewer ──────────────────────────────────────────────
-        self._image_viewer = ImageViewer()
+        self._image_viewer = ImageViewer(self._img_manager)
         self._image_viewer.back_requested.connect(self._close_viewer)
         self._image_viewer.image_deleted.connect(self._on_image_deleted)
+        self._image_viewer.image_changed.connect(self._on_image_changed)
 
         # ── Stack ─────────────────────────────────────────────────────
         self._stack = QStackedWidget()
@@ -160,7 +164,7 @@ class MainWindow(QMainWindow):
         add_btn.clicked.connect(self._add_source)
 
         self._rescan_btn = IconButton("sort", tooltip="Rescan library")
-        self._rescan_btn.clicked.connect(self._start_scan)
+        self._rescan_btn.clicked.connect(lambda: self._start_scan())
 
         lay.addWidget(logo)
         lay.addSpacing(16)
@@ -173,14 +177,15 @@ class MainWindow(QMainWindow):
     # ─────────────────────────────────────────────────────────────────
     # Library Scanning
     # ─────────────────────────────────────────────────────────────────
-    def _start_scan(self):
+    def _start_scan(self, select_album: str | None = None):
         if self._indexer and self._indexer.isRunning():
             self._indexer.stop()
 
         self._album_panel.clear()
         self._status.showMessage("Scanning for images…")
+        self._pending_album_select = select_album
 
-        self._indexer = LibraryIndexer(parent=self)
+        self._indexer = LibraryIndexer(roots=self._scan_roots, parent=self)
         self._indexer.album_found.connect(self._on_album_found)
         self._indexer.scan_progress.connect(self._on_scan_progress)
         self._indexer.scan_complete.connect(self._on_scan_complete)
@@ -198,22 +203,23 @@ class MainWindow(QMainWindow):
         self._status.showMessage(
             f"Library ready — {total_albums} albums, {total_images} images"
         )
-        # Auto-select first album
+        if self._pending_album_select and self._album_panel.select_path(self._pending_album_select):
+            self._pending_album_select = None
+            return
+        self._pending_album_select = None
         self._album_panel.select_first()
 
     def _add_source(self):
-        folder = QFileDialog.getExistingDirectory(self, "Add Image Source Folder")
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            "Add Image Source Folder",
+            "",
+            QFileDialog.Option.DontUseNativeDialog,
+        )
         if folder:
-            if self._indexer and self._indexer.isRunning():
-                self._indexer.stop()
-            extra = LibraryIndexer(roots=[folder], parent=self)
-            extra.album_found.connect(self._on_album_found)
-            extra.scan_complete.connect(
-                lambda a, i: self._status.showMessage(
-                    f"Added {a} album(s) — {i} images"
-                )
-            )
-            extra.start()
+            if folder not in self._scan_roots:
+                self._scan_roots.append(folder)
+            self._start_scan(select_album=folder)
 
     # ─────────────────────────────────────────────────────────────────
     # Gallery ↔ Viewer switching
@@ -231,8 +237,28 @@ class MainWindow(QMainWindow):
         self._stack.setCurrentWidget(self._gallery_shell)
 
     def _on_image_deleted(self, path: str):
-        # Invalidate cache entry
         self._img_manager.invalidate(path)
+        self._gallery_view.remove_image(path)
+
+    def _on_image_changed(self, old_path: str, new_path: str):
+        if old_path:
+            self._img_manager.invalidate(old_path)
+        if new_path:
+            self._img_manager.invalidate(new_path)
+            parent = str(Path(new_path).parent)
+            if parent not in self._scan_roots:
+                self._scan_roots.append(parent)
+
+        if old_path and old_path == new_path:
+            self._gallery_view.refresh_current_folder()
+            self._status.showMessage(f"Updated {Path(new_path).name}")
+            return
+
+        current_album = self._folder_path_label.text()
+        target_album = current_album
+        if new_path and Path(new_path).parent.exists():
+            target_album = str(Path(new_path).parent)
+        self._start_scan(select_album=target_album)
 
     # ─────────────────────────────────────────────────────────────────
     # Window close

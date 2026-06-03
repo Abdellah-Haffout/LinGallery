@@ -195,12 +195,6 @@ class ImageManager(QObject):
 
     def invalidate(self, path: str) -> None:
         """Call after editing an image to force a fresh decode."""
-        self._cache._mem.pop(f"thumb:{path}", None)
-        self._cache._mem.pop(f"full:{path}", None)
-        self._cache._disk_dir
-        thumb_path = self._cache.disk_thumb_path(path, AppConst.THUMB_SIZE)
-        if thumb_path.exists():
-            try:
-                thumb_path.unlink()
-            except Exception:
-                pass
+        self._cache.remove(f"thumb:{path}")
+        self._cache.remove(f"full:{path}")
+        self._cache.invalidate_disk_thumbs(path)

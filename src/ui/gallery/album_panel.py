@@ -132,3 +132,14 @@ class AlbumPanel(QWidget):
             item = self.list_widget.item(0)
             if item:
                 self._on_item_clicked(item)
+
+    def select_path(self, folder_path: str) -> bool:
+        row = self._album_paths.get(folder_path)
+        if row is None:
+            return False
+        self.list_widget.setCurrentRow(row)
+        item = self.list_widget.item(row)
+        if item:
+            self._on_item_clicked(item)
+            return True
+        return False

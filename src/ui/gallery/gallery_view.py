@@ -1,45 +1,171 @@
 """
-LinGallery — Gallery View (async lazy-loading thumbnail grid).
+LinGallery — responsive, delegate-painted thumbnail grid.
 """
 from __future__ import annotations
+
 from pathlib import Path
 from typing import List
 
-from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QListWidget, QListWidgetItem,
-    QListView, QAbstractItemView, QLabel
+from PySide6.QtCore import (
+    QAbstractListModel,
+    QModelIndex,
+    QRect,
+    QSize,
+    Qt,
+    QTimer,
+    Signal,
 )
-from PySide6.QtCore import Qt, QSize, Signal
-from PySide6.QtGui import QIcon, QPixmap, QImage
+from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QLabel,
+    QListView,
+    QStyledItemDelegate,
+    QStyle,
+    QVBoxLayout,
+    QWidget,
+)
 
 from core.constants import AppConst, DarkPalette
 from logic.image_manager import ImageManager
 
 
+class _ImageGridModel(QAbstractListModel):
+    PathRole = Qt.UserRole + 1
+    PixmapRole = Qt.UserRole + 2
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._paths: list[str] = []
+        self._pixmaps: dict[str, QPixmap] = {}
+
+    def rowCount(self, parent=QModelIndex()) -> int:
+        return 0 if parent.isValid() else len(self._paths)
+
+    def data(self, index: QModelIndex, role: int = Qt.DisplayRole):
+        if not index.isValid() or index.row() >= len(self._paths):
+            return None
+        path = self._paths[index.row()]
+        if role == self.PathRole:
+            return path
+        if role == self.PixmapRole:
+            return self._pixmaps.get(path)
+        if role == Qt.ToolTipRole:
+            return Path(path).name
+        return None
+
+    def set_paths(self, paths: list[str]):
+        self.beginResetModel()
+        self._paths = paths
+        self._pixmaps.clear()
+        self.endResetModel()
+
+    def paths(self) -> list[str]:
+        return list(self._paths)
+
+    def set_thumbnail(self, path: str, pixmap: QPixmap):
+        row = self.row_for_path(path)
+        if row < 0:
+            return
+        self._pixmaps[path] = pixmap
+        idx = self.index(row, 0)
+        self.dataChanged.emit(idx, idx, [self.PixmapRole])
+
+    def remove_path(self, path: str):
+        row = self.row_for_path(path)
+        if row < 0:
+            return
+        self.beginRemoveRows(QModelIndex(), row, row)
+        self._paths.pop(row)
+        self._pixmaps.pop(path, None)
+        self.endRemoveRows()
+
+    def row_for_path(self, path: str) -> int:
+        try:
+            return self._paths.index(path)
+        except ValueError:
+            return -1
+
+
+class _GalleryDelegate(QStyledItemDelegate):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._radius = 8
+
+    def paint(self, painter: QPainter, option, index: QModelIndex):
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+
+        rect = option.rect.adjusted(4, 4, -4, -4)
+        selected = bool(option.state & QStyle.State_Selected)
+        hover = bool(option.state & QStyle.State_MouseOver)
+
+        bg = QColor(DarkPalette.SURFACE_CONTAINER)
+        if selected:
+            bg = QColor(DarkPalette.PRIMARY_CONTAINER)
+        elif hover:
+            bg = QColor(DarkPalette.SURFACE_VARIANT)
+
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(bg)
+        painter.drawRoundedRect(rect, self._radius, self._radius)
+
+        pixmap = index.data(_ImageGridModel.PixmapRole)
+        image_rect = rect.adjusted(0, 0, 0, 0)
+        if isinstance(pixmap, QPixmap) and not pixmap.isNull():
+            scaled = pixmap.scaled(
+                image_rect.size(),
+                Qt.KeepAspectRatioByExpanding,
+                Qt.SmoothTransformation,
+            )
+            source = QRect(
+                max(0, (scaled.width() - image_rect.width()) // 2),
+                max(0, (scaled.height() - image_rect.height()) // 2),
+                image_rect.width(),
+                image_rect.height(),
+            )
+            painter.setClipRect(image_rect)
+            painter.drawPixmap(image_rect, scaled, source)
+            painter.setClipping(False)
+        else:
+            painter.setPen(QPen(QColor(DarkPalette.OUTLINE), 1))
+            painter.setBrush(QColor(DarkPalette.SURFACE_VARIANT))
+            painter.drawRoundedRect(image_rect.adjusted(16, 16, -16, -16), 6, 6)
+
+        if selected:
+            painter.setPen(QPen(QColor(DarkPalette.PRIMARY), 3))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRoundedRect(rect.adjusted(2, 2, -2, -2), self._radius, self._radius)
+
+        painter.restore()
+
+    def sizeHint(self, option, index: QModelIndex) -> QSize:
+        return option.decorationSize
+
+
 class GalleryView(QWidget):
     """
-    Async thumbnail grid. Thumbnails load in background threads.
+    Responsive thumbnail grid.
     Emits image_selected(path, image_list, index) to the viewer.
     """
-    image_selected = Signal(str, list, int)  # path, all paths, index
+    image_selected = Signal(str, list, int)
 
     def __init__(self, image_manager: ImageManager, parent=None):
         super().__init__(parent)
         self._manager = image_manager
-        self._image_paths: List[str] = []
-        self._path_to_item: dict[str, QListWidgetItem] = {}
         self._current_folder = ""
+        self._requested_thumbs: set[str] = set()
+        self._tile_size = 160
+        self._model = _ImageGridModel(self)
         self._setup_ui()
-
-        # Connect async delivery
         self._manager.thumbnail_ready.connect(self._on_thumbnail_ready)
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(0)
 
-        # Empty state label
         self._empty_label = QLabel("Open a folder or select an album to browse images")
         self._empty_label.setAlignment(Qt.AlignCenter)
         self._empty_label.setStyleSheet(
@@ -47,36 +173,26 @@ class GalleryView(QWidget):
         )
         layout.addWidget(self._empty_label)
 
-        thumb_w, thumb_h = AppConst.THUMB_SIZE
-        self._list = QListWidget()
-        self._list.setViewMode(QListView.IconMode)
-        self._list.setIconSize(QSize(thumb_w, thumb_h))
-        self._list.setResizeMode(QListView.Adjust)
-        self._list.setSpacing(AppConst.THUMB_SPACING)
-        self._list.setMovement(QListView.Static)
-        self._list.setSelectionMode(QAbstractItemView.SingleSelection)
-        self._list.setUniformItemSizes(True)
-        self._list.setLayoutMode(QListView.Batched)
-        self._list.setBatchSize(30)
-        self._list.setStyleSheet(f"""
-            QListWidget {{
+        self._view = QListView()
+        self._view.setModel(self._model)
+        self._view.setItemDelegate(_GalleryDelegate(self._view))
+        self._view.setViewMode(QListView.IconMode)
+        self._view.setResizeMode(QListView.Adjust)
+        self._view.setMovement(QListView.Static)
+        self._view.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._view.setUniformItemSizes(True)
+        self._view.setLayoutMode(QListView.Batched)
+        self._view.setBatchSize(96)
+        self._view.setWrapping(True)
+        self._view.setWordWrap(False)
+        self._view.setMouseTracking(True)
+        self._view.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self._view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._view.setStyleSheet(f"""
+            QListView {{
                 background-color: transparent;
                 border: none;
                 outline: none;
-            }}
-            QListWidget::item {{
-                background-color: {DarkPalette.SURFACE_CONTAINER};
-                border-radius: {AppConst.CORNER_RADIUS}px;
-                padding: 4px;
-                color: {DarkPalette.ON_SURFACE_VARIANT};
-                font-size: 11px;
-            }}
-            QListWidget::item:selected {{
-                background-color: {DarkPalette.PRIMARY_CONTAINER};
-                color: {DarkPalette.ON_PRIMARY_CONTAINER};
-            }}
-            QListWidget::item:hover {{
-                background-color: {DarkPalette.SURFACE_VARIANT};
             }}
             QScrollBar:vertical {{
                 background: {DarkPalette.BACKGROUND};
@@ -91,79 +207,96 @@ class GalleryView(QWidget):
                 height: 0;
             }}
         """)
-        self._list.hide()
-        self._list.itemDoubleClicked.connect(self._on_double_clicked)
-        layout.addWidget(self._list)
+        self._view.hide()
+        self._view.doubleClicked.connect(self._on_double_clicked)
+        self._view.verticalScrollBar().valueChanged.connect(self._request_visible_thumbnails)
+        layout.addWidget(self._view)
 
-    # ── Public API ────────────────────────────────────────────────────
     def load_folder(self, folder_path: str):
         if folder_path == self._current_folder:
             return
         self._current_folder = folder_path
-        self._image_paths.clear()
-        self._path_to_item.clear()
-        self._list.clear()
+        self._requested_thumbs.clear()
 
         path = Path(folder_path)
-        images = sorted(
-            str(f) for f in path.iterdir()
-            if f.suffix.lower() in AppConst.SUPPORTED_FORMATS
-        )
+        try:
+            images = sorted(
+                str(f) for f in path.iterdir()
+                if f.is_file() and f.suffix.lower() in AppConst.SUPPORTED_FORMATS
+            )
+        except OSError:
+            images = []
+
+        self._model.set_paths(images)
+        self._update_grid_metrics()
 
         if not images:
-            self._list.hide()
+            self._view.hide()
             self._empty_label.show()
             return
 
-        self._image_paths = images
         self._empty_label.hide()
-        self._list.show()
-
-        # Create placeholder items immediately (non-blocking)
-        placeholder = _placeholder_pixmap(*AppConst.THUMB_SIZE)
-        for img_path in images:
-            item = QListWidgetItem(QIcon(placeholder), Path(img_path).name)
-            item.setData(Qt.UserRole, img_path)
-            item.setTextAlignment(Qt.AlignCenter)
-            item.setSizeHint(QSize(
-                AppConst.THUMB_SIZE[0] + 16,
-                AppConst.THUMB_SIZE[1] + 32
-            ))
-            self._list.addItem(item)
-            self._path_to_item[img_path] = item
-
-        # Kick off background thumbnail loading
-        for img_path in images:
-            self._manager.request_thumbnail(img_path)
+        self._view.show()
+        QTimer.singleShot(0, self._request_visible_thumbnails)
 
     def get_image_list(self) -> List[str]:
-        return list(self._image_paths)
+        return self._model.paths()
 
-    # ── Slots ─────────────────────────────────────────────────────────
+    def remove_image(self, path: str):
+        self._model.remove_path(path)
+        self._requested_thumbs.discard(path)
+        if not self._model.paths():
+            self._view.hide()
+            self._empty_label.show()
+
+    def refresh_current_folder(self):
+        folder = self._current_folder
+        self._current_folder = ""
+        if folder:
+            self.load_folder(folder)
+
     def _on_thumbnail_ready(self, path: str, qimage: QImage):
-        item = self._path_to_item.get(path)
-        if item is None:
+        if self._model.row_for_path(path) < 0:
             return
-        pixmap = QPixmap.fromImage(qimage)
-        item.setIcon(QIcon(pixmap))
+        self._model.set_thumbnail(path, QPixmap.fromImage(qimage))
 
-    def _on_double_clicked(self, item: QListWidgetItem):
-        path = item.data(Qt.UserRole)
-        if path and path in self._image_paths:
-            idx = self._image_paths.index(path)
-            self.image_selected.emit(path, list(self._image_paths), idx)
+    def _on_double_clicked(self, index: QModelIndex):
+        path = index.data(_ImageGridModel.PathRole)
+        paths = self._model.paths()
+        if path in paths:
+            self.image_selected.emit(path, paths, paths.index(path))
 
+    def _request_visible_thumbnails(self):
+        paths = self._model.paths()
+        if not paths or not self._view.isVisible():
+            return
 
-# ── Helpers ───────────────────────────────────────────────────────────
-def _placeholder_pixmap(w: int, h: int) -> QPixmap:
-    """A subtle dark rectangle as a thumbnail placeholder."""
-    pm = QPixmap(w, h)
-    pm.fill(Qt.transparent)
-    from PySide6.QtGui import QPainter, QColor, QPen
-    p = QPainter(pm)
-    p.setRenderHint(QPainter.Antialiasing)
-    p.setBrush(QColor(DarkPalette.SURFACE_VARIANT))
-    p.setPen(Qt.NoPen)
-    p.drawRoundedRect(0, 0, w, h, AppConst.CORNER_RADIUS, AppConst.CORNER_RADIUS)
-    p.end()
-    return pm
+        viewport = self._view.viewport().rect().adjusted(0, -self._tile_size, 0, self._tile_size)
+        for row, path in enumerate(paths):
+            if path in self._requested_thumbs:
+                continue
+            idx = self._model.index(row, 0)
+            if self._view.visualRect(idx).intersects(viewport):
+                self._requested_thumbs.add(path)
+                self._manager.request_thumbnail(path, (self._tile_size, self._tile_size))
+
+    def _update_grid_metrics(self):
+        width = max(1, self._view.viewport().width())
+        spacing = 8
+        min_tile = 132
+        max_tile = 220
+        columns = max(2, width // (min_tile + spacing))
+        tile = (width - spacing * max(0, columns - 1)) // columns
+        tile = max(min_tile, min(max_tile, tile))
+        self._tile_size = tile
+        self._view.setSpacing(spacing)
+        self._view.setGridSize(QSize(tile + spacing, tile + spacing))
+        self._view.setIconSize(QSize(tile, tile))
+        delegate = self._view.itemDelegate()
+        if delegate:
+            self._view.setItemDelegate(delegate)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_grid_metrics()
+        QTimer.singleShot(0, self._request_visible_thumbnails)

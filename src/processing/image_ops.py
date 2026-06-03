@@ -31,13 +31,14 @@ def _save_in_place(img: Image.Image, path: str) -> None:
         ".bmp": "BMP", ".tiff": "TIFF", ".tif": "TIFF",
     }
     fmt = fmt_map.get(suffix, "PNG")
-    img.save(path, fmt, quality=95 if fmt == "JPEG" else None)
+    save_args = {"quality": 95} if fmt == "JPEG" else {}
+    img.save(path, fmt, **save_args)
 
 
 def rotate(path: str, degrees: int) -> bool:
     """Rotate image by degrees (counter-clockwise). expand=True preserves full image."""
     try:
-        img = Image.open(path)
+        img = ImageOps.exif_transpose(Image.open(path))
         img = img.rotate(degrees, expand=True)
         _save_in_place(img, path)
         return True
@@ -48,7 +49,7 @@ def rotate(path: str, degrees: int) -> bool:
 def flip_horizontal(path: str) -> bool:
     """Mirror the image horizontally (left-right)."""
     try:
-        img = Image.open(path)
+        img = ImageOps.exif_transpose(Image.open(path))
         img = ImageOps.mirror(img)
         _save_in_place(img, path)
         return True
@@ -59,7 +60,7 @@ def flip_horizontal(path: str) -> bool:
 def flip_vertical(path: str) -> bool:
     """Flip the image vertically (top-bottom)."""
     try:
-        img = Image.open(path)
+        img = ImageOps.exif_transpose(Image.open(path))
         img = ImageOps.flip(img)
         _save_in_place(img, path)
         return True
@@ -70,8 +71,12 @@ def flip_vertical(path: str) -> bool:
 def crop(path: str, x: int, y: int, width: int, height: int) -> bool:
     """Crop the image to the given pixel rectangle."""
     try:
-        img = Image.open(path)
-        box = (x, y, x + width, y + height)
+        img = ImageOps.exif_transpose(Image.open(path))
+        left = max(0, min(x, img.width - 1))
+        top = max(0, min(y, img.height - 1))
+        right = max(left + 1, min(x + width, img.width))
+        bottom = max(top + 1, min(y + height, img.height))
+        box = (left, top, right, bottom)
         img = img.crop(box)
         _save_in_place(img, path)
         return True
