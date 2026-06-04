@@ -48,6 +48,15 @@ class ListComponent(CompositeComponent):
             "id": self.component_id,
             "children": [child.render(context) for child in self.children],
             "resolved_tokens": {
-                "container_color": context.theme.color_scheme.surface
+                # Surface colors
+                "container_color": context.theme.color_scheme.surface,
+                # Item content colors (normal, hover, selected)
+                "content_color": context.theme.color_scheme.on_surface_variant,
+                "hover_color": context.theme.color_scheme.surface_variant,
+                "hover_content_color": context.theme.color_scheme.on_surface,
+                "selected_color": context.theme.color_scheme.primary_container,
+                "selected_content_color": context.theme.color_scheme.on_primary_container,
+                # Structural
+                "outline": context.theme.color_scheme.outline,
             }
         }

@@ -77,7 +77,11 @@ class PySide6MaterialBuilder:
         self._apply_font(label, tokens["text_style"])
         if tokens["text_style"].size_sp < 16:
             label.setWordWrap(True)
-        label.setStyleSheet(f"color: {tokens['color']};")
+        # background-color: transparent is required to prevent Qt's stylesheet
+        # inheritance from painting the parent surface color as a filled block
+        # behind the label glyphs. Text must be transparent-background by default;
+        # only a surface/container component owns a background color.
+        label.setStyleSheet(f"color: {tokens['color']}; background-color: transparent;")
         return label
 
     def _build_button(self, node: dict, parent: QWidget | None) -> QPushButton:
@@ -171,7 +175,9 @@ class PySide6MaterialBuilder:
             
         title = QLabel(node["props"].title)
         self._apply_font(title, tokens["title_typography"])
-        title.setStyleSheet(f"color: {tokens['title_color']};")
+        # Explicit transparent background prevents Qt stylesheet inheritance from
+        # painting the container surface color as a filled rect behind the title.
+        title.setStyleSheet(f"color: {tokens['title_color']}; background-color: transparent;")
         layout.addWidget(title)
         layout.addStretch()
         
@@ -192,12 +198,53 @@ class PySide6MaterialBuilder:
         return scroll
 
     def _build_grid_view(self, node: dict, parent: QWidget | None) -> QWidget:
-        # For GridView we will rely on GalleryView's custom implementation
-        # but we inject the Material tokens into it by returning a styled QWidget wrapper.
-        # This acts as a placeholder if called directly, but in practice LinGallery
-        # uses the custom PySide6 QListView for performance.
-        w = QWidget(parent)
-        return w
+        """
+        Renders a generic Material grid view using QListView in IconMode.
+        Token-driven: background and selection states are resolved from the
+        component's design tokens.
+
+        Applications that require custom cell rendering (e.g., thumbnail
+        delegates with progressive loading) may retrieve this view via
+        QWidget.findChild(QListView, node_id) and install a custom
+        QStyledItemDelegate after building the tree.
+        """
+        from PySide6.QtWidgets import QListView, QAbstractItemView
+        tokens = node["resolved_tokens"]
+        view = QListView(parent)
+        view.setObjectName(node["id"])
+        view.setViewMode(QListView.IconMode)
+        view.setResizeMode(QListView.Adjust)
+        view.setMovement(QListView.Static)
+        view.setWrapping(True)
+        view.setSelectionMode(QAbstractItemView.SingleSelection)
+        view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        view.setMouseTracking(True)
+        view.setStyleSheet(f"""
+            QListView {{
+                background-color: {tokens['background_color']};
+                border: none;
+                outline: none;
+            }}
+            QListView::item:selected {{
+                background-color: {tokens['item_primary_container']};
+            }}
+            QListView::item:hover {{
+                background-color: {tokens['item_surface_variant']};
+            }}
+            QScrollBar:vertical {{
+                background: transparent;
+                width: 4px;
+                border-radius: 2px;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {tokens['outline']};
+                border-radius: 2px;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0;
+            }}
+        """)
+        return view
 
     def _build_image(self, node: dict, parent: QWidget | None) -> QLabel:
         lbl = QLabel(parent)
@@ -239,30 +286,26 @@ class PySide6MaterialBuilder:
         tokens = node["resolved_tokens"]
         lbl = QLabel(props.icon_name, parent)
         lbl.setObjectName(node["id"])
-        # Assuming Material Symbols font is loaded in the app
+        # Requires the Material Symbols Outlined variable font to be registered
+        # in the application's QFontDatabase before use.
         font = QFont("Material Symbols Outlined", props.size)
         lbl.setFont(font)
-        lbl.setStyleSheet(f"color: {tokens['color']};")
+        # background-color: transparent prevents the Qt stylesheet cascade from
+        # painting the parent's surface color as a filled rect behind the glyph.
+        lbl.setStyleSheet(f"color: {tokens['color']}; background-color: transparent;")
         return lbl
 
     def _build_list(self, node: dict, parent: QWidget | None) -> QListWidget:
         lw = QListWidget(parent)
         lw.setObjectName(node["id"])
+        # All colors are sourced exclusively from node["resolved_tokens"],
+        # which are resolved by ListComponent.render() from the active Theme.
+        # The builder must not bypass this by accessing self.theme directly.
         tokens = node["resolved_tokens"]
-        
-        # Pull tokens for states from theme
-        theme = self.theme
-        surface = theme.color_scheme.surface
-        surface_variant = theme.color_scheme.surface_variant
-        primary_container = theme.color_scheme.primary_container
-        on_primary_container = theme.color_scheme.on_primary_container
-        on_surface = theme.color_scheme.on_surface
-        on_surface_variant = theme.color_scheme.on_surface_variant
-        outline = theme.color_scheme.outline
 
         lw.setStyleSheet(f"""
             QListWidget {{
-                background-color: {surface};
+                background-color: {tokens['container_color']};
                 border: none;
                 outline: none;
                 padding: 8px 0;
@@ -270,23 +313,24 @@ class PySide6MaterialBuilder:
             QListWidget::item {{
                 padding: 10px 16px;
                 border-radius: 0;
-                color: {on_surface_variant};
+                color: {tokens['content_color']};
+                background-color: transparent;
             }}
             QListWidget::item:hover {{
-                background-color: {surface_variant};
-                color: {on_surface};
+                background-color: {tokens['hover_color']};
+                color: {tokens['hover_content_color']};
             }}
             QListWidget::item:selected {{
-                background-color: {primary_container};
-                color: {on_primary_container};
+                background-color: {tokens['selected_color']};
+                color: {tokens['selected_content_color']};
             }}
             QScrollBar:vertical {{
-                background: {surface};
+                background: {tokens['container_color']};
                 width: 4px;
                 border-radius: 2px;
             }}
             QScrollBar::handle:vertical {{
-                background: {outline};
+                background: {tokens['outline']};
                 border-radius: 2px;
             }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{

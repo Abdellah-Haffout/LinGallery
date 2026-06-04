@@ -3,6 +3,7 @@ from typing import Any, Optional, List
 
 from ..core.component import UIComponent, CompositeComponent
 from ..core.context import RenderContext
+from ..tokens.spacing import Spacing
 
 class FormLayout(CompositeComponent):
     def render(self, context: RenderContext) -> Any:
@@ -11,7 +12,7 @@ class FormLayout(CompositeComponent):
             "id": self.component_id,
             "children": [child.render(context) for child in self.children],
             "resolved_tokens": {
-                "spacing": 10,
+                "spacing": int(Spacing.SPACING_8.value),
                 "label_color": context.theme.color_scheme.on_surface_variant,
                 "value_color": context.theme.color_scheme.on_surface,
                 "label_typography": context.theme.type_scale.body_medium,

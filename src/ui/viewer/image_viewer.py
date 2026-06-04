@@ -580,7 +580,7 @@ class _CropActionBar(QWidget):
         layout.addWidget(self._message)
         layout.addStretch()
         
-        bridge = MaterialQtBridge()
+        bridge = MaterialQtBridge.get()
         cancel_btn = MD3Button(bridge, "Cancel", False, self)
         cancel_btn.clicked.connect(self.cancel_requested.emit)
         layout.addWidget(cancel_btn)

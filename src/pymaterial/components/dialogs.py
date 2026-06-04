@@ -1,11 +1,12 @@
 from dataclasses import dataclass
 from typing import List, Optional, Any
 
-from ..core.component import SlotComponent, UIComponent
+from ..core.component import SlotComponent, UIComponent, StatelessComponent
 from ..core.context import RenderContext
 from ..core.slots import SlotRegistry
 from ..tokens.elevation import ElevationLevel
 from ..tokens.spacing import Spacing
+from .text import TextProps
 
 @dataclass(frozen=True)
 class DialogProps:
@@ -35,27 +36,11 @@ class Dialog(SlotComponent):
                 "child_background": self._get_child_background(),
                 "elevation": self._get_elevation(),
                 "shape": self._get_shape(context),
-                "title_color": self._get_title_color(context),
-                "supporting_text_color": self._get_supporting_text_color(context),
-                "title_typography": self._get_title_typography(context),
-                "supporting_text_typography": self._get_supporting_text_typography(context),
                 "padding": Spacing.SPACING_24.value,
                 "spacing": Spacing.SPACING_24.value,
                 "button_spacing": Spacing.SPACING_8.value
             }
         }
-
-    def _get_title_color(self, context: RenderContext) -> str:
-        return context.theme.color_scheme.on_surface
-
-    def _get_supporting_text_color(self, context: RenderContext) -> str:
-        return context.theme.color_scheme.on_surface_variant
-
-    def _get_title_typography(self, context: RenderContext) -> Any:
-        return context.theme.type_scale.headline_small
-
-    def _get_supporting_text_typography(self, context: RenderContext) -> Any:
-        return context.theme.type_scale.body_medium
 
     def _get_container_color(self, context: RenderContext) -> str:
         return context.theme.color_scheme.surface_container_high
@@ -85,3 +70,35 @@ class CustomDialog(Dialog):
 class FullScreenDialog(Dialog):
     def _get_shape(self, context: RenderContext) -> Any:
         return context.theme.shape_scale.none # Full screen dialogs have no rounded corners
+
+class DialogTitle(StatelessComponent):
+    def __init__(self, component_id: str, props: TextProps):
+        super().__init__(component_id)
+        self.props = props
+
+    def render(self, context: RenderContext) -> Any:
+        return {
+            "type": "Text",
+            "id": self.component_id,
+            "props": self.props,
+            "resolved_tokens": {
+                "text_style": context.theme.type_scale.headline_small,
+                "color": context.theme.color_scheme.on_surface
+            }
+        }
+
+class DialogSupportingText(StatelessComponent):
+    def __init__(self, component_id: str, props: TextProps):
+        super().__init__(component_id)
+        self.props = props
+
+    def render(self, context: RenderContext) -> Any:
+        return {
+            "type": "Text",
+            "id": self.component_id,
+            "props": self.props,
+            "resolved_tokens": {
+                "text_style": context.theme.type_scale.body_medium,
+                "color": context.theme.color_scheme.on_surface_variant
+            }
+        }

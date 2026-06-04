@@ -3,7 +3,8 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QMouseEvent, QKeyEvent, QFont
 
 from ui.material_bridge import MaterialQtBridge
-from pymaterial.components.dialogs import AlertDialog, DialogProps
+from pymaterial.components.dialogs import AlertDialog, DialogProps, DialogTitle, DialogSupportingText
+from pymaterial.components.text import TextProps
 from pymaterial.components.buttons import FilledButton, TextButton, ButtonProps
 from pymaterial.components.textfields import OutlinedTextField, TextFieldProps
 
@@ -150,16 +151,13 @@ class MaterialDialog(QFrame):
         box_layout.setSpacing(spacing)
         
         if title:
-            self.title_label = QLabel(title)
-            _apply_font(self.title_label, self.resolved["title_typography"])
-            self.title_label.setStyleSheet(f"color: {self.resolved['title_color']};")
+            title_comp = DialogTitle("dialog_title", TextProps(title))
+            self.title_label = self.bridge.builder.build(title_comp, self.dialog_box)
             box_layout.addWidget(self.title_label)
             
         if content_text:
-            self.content_label = QLabel(content_text)
-            self.content_label.setWordWrap(True)
-            _apply_font(self.content_label, self.resolved["supporting_text_typography"])
-            self.content_label.setStyleSheet(f"color: {self.resolved['supporting_text_color']};")
+            content_comp = DialogSupportingText("dialog_content", TextProps(content_text))
+            self.content_label = self.bridge.builder.build(content_comp, self.dialog_box)
             box_layout.addWidget(self.content_label)
             
         if content_widget:
