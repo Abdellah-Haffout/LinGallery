@@ -25,7 +25,7 @@ The application is engineered to handle massive image libraries efficiently, uti
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/yourusername/lingallery.git
+    git clone https://github.com/SoufianoDev/lingallery.git
     cd lingallery
     ```
 

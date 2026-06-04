@@ -24,6 +24,8 @@ from ui.components.icon_button import IconButton
 from ui.viewer.slideshow_controller import SlideshowController
 from ui.viewer.edit_toolbar import EditToolbar
 import processing.image_ops as image_ops
+from ui.material_bridge import MaterialQtBridge
+from ui.components.material_dialog import MaterialDialog, MD3TextField, MD3Button
 
 
 class ImageViewer(QWidget):
@@ -124,6 +126,11 @@ class ImageViewer(QWidget):
         self._scene = QGraphicsScene(self._view)
         self._view.setScene(self._scene)
         self._pixmap_item = QGraphicsPixmapItem()
+        # SmoothTransformation tells Qt to use high-quality bicubic/bilinear
+        # resampling when the view transform scales the pixmap.  Without this
+        # the item falls back to FastTransformation (nearest-neighbour) and the
+        # image looks pixelated even though the view has SmoothPixmapTransform.
+        self._pixmap_item.setTransformationMode(Qt.SmoothTransformation)
         self._scene.addItem(self._pixmap_item)
 
         center_lay.addWidget(self._prev_btn)
@@ -155,14 +162,6 @@ class ImageViewer(QWidget):
         root_layout.addWidget(self._edit_toolbar)
 
         self._view.crop_rect_selected.connect(self._crop_current)
-        self._rename_overlay = _RenameOverlay(self)
-        self._rename_overlay.rename_requested.connect(self._commit_rename)
-        self._rename_overlay.hide()
-        self._notice_overlay = _NoticeOverlay(self)
-        self._notice_overlay.hide()
-        self._crop_save_dialog = _CropSaveDialog(self)
-        self._crop_save_dialog.save_requested.connect(self._execute_crop)
-        self._crop_save_dialog.hide()
 
     # ─────────────────────────────────────────────────────────────────
     # Public API
@@ -339,7 +338,11 @@ class ImageViewer(QWidget):
     def _apply_crop(self):
         if not self._current_path or not self._pending_crop_rect:
             return
-        self._crop_save_dialog.open()
+        d = MaterialDialog(self, "Save Crop", "How do you want to save the cropped image?")
+        d.add_action("Cancel", d.close_dialog)
+        d.add_action("Overwrite", lambda: [d.close_dialog(), self._execute_crop("overwrite")])
+        d.add_action("Save as Copy", lambda: [d.close_dialog(), self._execute_crop("copy")], is_primary=True)
+        d.open()
 
     def _execute_crop(self, choice: str):
         if not self._current_path or not self._pending_crop_rect:
@@ -378,12 +381,10 @@ class ImageViewer(QWidget):
     def _delete_image(self):
         if not self._current_path:
             return
-        self._notice_overlay.open(
-            "Delete image",
-            f"Permanently delete {Path(self._current_path).name}?",
-            confirm_text="Delete",
-            on_confirm=self._perform_delete_current,
-        )
+        d = MaterialDialog(self, "Delete image", f"Permanently delete {Path(self._current_path).name}?")
+        d.add_action("Cancel", d.close_dialog)
+        d.add_action("Delete", lambda: [d.close_dialog(), self._perform_delete_current()], is_primary=True)
+        d.open()
 
     def _perform_delete_current(self):
         path = self._current_path
@@ -445,7 +446,23 @@ class ImageViewer(QWidget):
         if not self._current_path:
             return
         old = Path(self._current_path)
-        self._rename_overlay.open(old.name)
+        
+        d = MaterialDialog(self, "Rename Image")
+        tf = MD3TextField(d.bridge, "File Name", old.name)
+        d.dialog_box.layout().insertWidget(1, tf)
+        
+        def _on_rename_submit():
+            new_name = tf.text()
+            d.close_dialog()
+            if new_name:
+                self._commit_rename(new_name)
+                
+        tf.returnPressed.connect(_on_rename_submit)
+        d.add_action("Cancel", d.close_dialog)
+        d.add_action("Rename", _on_rename_submit, is_primary=True)
+        d.open()
+        tf.selectAll()
+        tf.setFocus()
 
     def _commit_rename(self, new_name: str):
         if not self._current_path:
@@ -482,7 +499,9 @@ class ImageViewer(QWidget):
         self._display_current()
 
     def _show_operation_failed(self, message: str):
-        self._notice_overlay.open("Image operation failed", message)
+        d = MaterialDialog(self, "Image operation failed", message)
+        d.add_action("OK", d.close_dialog, is_primary=True)
+        d.open()
 
     def _go_back(self):
         if self._slideshow.is_running:
@@ -502,14 +521,8 @@ class ImageViewer(QWidget):
         elif k in (Qt.Key_Left, Qt.Key_A):
             self.prev_image()
         elif k == Qt.Key_Escape:
-            if self._crop_save_dialog.isVisible():
-                self._crop_save_dialog.hide()
-            elif self._crop_bar.isVisible():
+            if self._crop_bar.isVisible():
                 self._cancel_crop()
-            elif self._notice_overlay.isVisible():
-                self._notice_overlay.hide()
-            elif self._rename_overlay.isVisible():
-                self._rename_overlay.hide()
             elif self._is_fullscreen:
                 self.toggle_fullscreen()
             else:
@@ -539,12 +552,6 @@ class ImageViewer(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if hasattr(self, "_rename_overlay"):
-            self._rename_overlay.reposition()
-        if hasattr(self, "_notice_overlay"):
-            self._notice_overlay.reposition()
-        if hasattr(self, "_crop_save_dialog"):
-            self._crop_save_dialog.reposition()
 
 
 class _CropActionBar(QWidget):
@@ -568,8 +575,15 @@ class _CropActionBar(QWidget):
         )
         layout.addWidget(self._message)
         layout.addStretch()
-        layout.addWidget(_TextButton("Cancel", self.cancel_requested))
-        layout.addWidget(_TextButton("Apply", self.apply_requested, filled=True))
+        
+        bridge = MaterialQtBridge()
+        cancel_btn = MD3Button(bridge, "Cancel", False, self)
+        cancel_btn.clicked.connect(self.cancel_requested.emit)
+        layout.addWidget(cancel_btn)
+        
+        apply_btn = MD3Button(bridge, "Apply", True, self)
+        apply_btn.clicked.connect(self.apply_requested.emit)
+        layout.addWidget(apply_btn)
 
     def show_message(self, text: str):
         self._message.setText(text)
@@ -630,261 +644,6 @@ class _InfoPanel(QWidget):
         self._form.addRow(key_label, value_label)
 
 
-class _RenameOverlay(QFrame):
-    rename_requested = Signal(str)
-
-    def __init__(self, parent: QWidget):
-        super().__init__(parent)
-        self.setObjectName("renameOverlay")
-        self.setStyleSheet(f"""
-            QFrame#renameOverlay {{
-                background-color: {DarkPalette.SURFACE_CONTAINER};
-                border: 1px solid {DarkPalette.OUTLINE};
-                border-radius: 8px;
-            }}
-            QLineEdit {{
-                background-color: {DarkPalette.BACKGROUND};
-                color: {DarkPalette.ON_SURFACE};
-                border: 1px solid {DarkPalette.OUTLINE};
-                border-radius: 6px;
-                padding: 8px 10px;
-                selection-background-color: {DarkPalette.PRIMARY_CONTAINER};
-                font-size: 14px;
-            }}
-            QLineEdit:focus {{
-                border-color: {DarkPalette.PRIMARY};
-            }}
-        """)
-        self.setFixedSize(520, 172)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 16, 18, 16)
-        layout.setSpacing(12)
-
-        title = QLabel("Rename image")
-        title.setStyleSheet(
-            f"color: {DarkPalette.ON_SURFACE}; font-size: 16px; font-weight: 800;"
-        )
-        layout.addWidget(title)
-
-        self._field = QLineEdit()
-        layout.addWidget(self._field)
-
-        buttons = QHBoxLayout()
-        buttons.addStretch()
-        buttons.addWidget(_TextButton("Cancel", self._cancel))
-        buttons.addWidget(_TextButton("Rename", self._accept, filled=True))
-        layout.addLayout(buttons)
-
-    def open(self, filename: str):
-        self._field.setText(filename)
-        self._field.selectAll()
-        self.reposition()
-        self.show()
-        self.raise_()
-        self._field.setFocus()
-
-    def reposition(self):
-        parent = self.parentWidget()
-        if not parent:
-            return
-        x = max(16, (parent.width() - self.width()) // 2)
-        y = max(16, (parent.height() - self.height()) // 2)
-        self.setGeometry(QRect(x, y, self.width(), self.height()))
-
-    def keyPressEvent(self, event: QKeyEvent):
-        if event.key() == Qt.Key_Escape:
-            self._cancel()
-        elif event.key() in (Qt.Key_Return, Qt.Key_Enter):
-            self._accept()
-        else:
-            super().keyPressEvent(event)
-
-    def _accept(self):
-        self.hide()
-        self.rename_requested.emit(self._field.text())
-
-    def _cancel(self):
-        self.hide()
-
-
-class _CropSaveDialog(QFrame):
-    save_requested = Signal(str)
-
-    def __init__(self, parent: QWidget):
-        super().__init__(parent)
-        self.setObjectName("cropSaveDialog")
-        self.setStyleSheet(f"""
-            QFrame#cropSaveDialog {{
-                background-color: {DarkPalette.SURFACE_CONTAINER};
-                border: 1px solid {DarkPalette.OUTLINE};
-                border-radius: 8px;
-            }}
-        """)
-        self.setFixedSize(480, 180)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 16, 18, 16)
-        layout.setSpacing(12)
-
-        title = QLabel("Save Crop")
-        title.setStyleSheet(
-            f"color: {DarkPalette.ON_SURFACE}; font-size: 16px; font-weight: 800;"
-        )
-        layout.addWidget(title)
-
-        message = QLabel("How do you want to save the cropped image?")
-        message.setWordWrap(True)
-        message.setStyleSheet(
-            f"color: {DarkPalette.ON_SURFACE_VARIANT}; font-size: 13px;"
-        )
-        layout.addWidget(message, stretch=1)
-
-        buttons = QHBoxLayout()
-        self._cancel_btn = _TextButton("Cancel", self.hide)
-        self._overwrite_btn = _TextButton("Overwrite", lambda: self._on_choice("overwrite"))
-        self._copy_btn = _TextButton("Save as Copy", lambda: self._on_choice("copy"), filled=True)
-        
-        buttons.addWidget(self._cancel_btn)
-        buttons.addStretch()
-        buttons.addWidget(self._overwrite_btn)
-        buttons.addWidget(self._copy_btn)
-        layout.addLayout(buttons)
-
-    def open(self):
-        self.reposition()
-        self.show()
-        self.raise_()
-        self._copy_btn.setFocus()
-
-    def reposition(self):
-        parent = self.parentWidget()
-        if not parent:
-            return
-        x = max(16, (parent.width() - self.width()) // 2)
-        y = max(16, (parent.height() - self.height()) // 2)
-        self.setGeometry(QRect(x, y, self.width(), self.height()))
-
-    def keyPressEvent(self, event: QKeyEvent):
-        if event.key() == Qt.Key_Escape:
-            self.hide()
-        else:
-            super().keyPressEvent(event)
-
-    def _on_choice(self, choice: str):
-        self.hide()
-        self.save_requested.emit(choice)
-
-
-class _NoticeOverlay(QFrame):
-    def __init__(self, parent: QWidget):
-        super().__init__(parent)
-        self._on_confirm = None
-        self.setObjectName("noticeOverlay")
-        self.setStyleSheet(f"""
-            QFrame#noticeOverlay {{
-                background-color: {DarkPalette.SURFACE_CONTAINER};
-                border: 1px solid {DarkPalette.OUTLINE};
-                border-radius: 8px;
-            }}
-        """)
-        self.setFixedSize(460, 180)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 16, 18, 16)
-        layout.setSpacing(12)
-
-        self._title = QLabel("")
-        self._title.setStyleSheet(
-            f"color: {DarkPalette.ON_SURFACE}; font-size: 16px; font-weight: 800;"
-        )
-        layout.addWidget(self._title)
-
-        self._message = QLabel("")
-        self._message.setWordWrap(True)
-        self._message.setStyleSheet(
-            f"color: {DarkPalette.ON_SURFACE_VARIANT}; font-size: 13px;"
-        )
-        layout.addWidget(self._message, stretch=1)
-
-        buttons = QHBoxLayout()
-        buttons.addStretch()
-        self._cancel_btn = _TextButton("Cancel", self.hide)
-        self._confirm_btn = _TextButton("OK", self._confirm, filled=True)
-        buttons.addWidget(self._cancel_btn)
-        buttons.addWidget(self._confirm_btn)
-        layout.addLayout(buttons)
-
-    def open(
-        self,
-        title: str,
-        message: str,
-        confirm_text: str = "OK",
-        on_confirm=None,
-    ):
-        self._title.setText(title)
-        self._message.setText(message)
-        self._confirm_btn.setText(confirm_text)
-        self._on_confirm = on_confirm
-        self._cancel_btn.setVisible(on_confirm is not None)
-        self.reposition()
-        self.show()
-        self.raise_()
-        self._confirm_btn.setFocus()
-
-    def reposition(self):
-        parent = self.parentWidget()
-        if not parent:
-            return
-        x = max(16, (parent.width() - self.width()) // 2)
-        y = max(16, (parent.height() - self.height()) // 2)
-        self.setGeometry(QRect(x, y, self.width(), self.height()))
-
-    def keyPressEvent(self, event: QKeyEvent):
-        if event.key() == Qt.Key_Escape:
-            self.hide()
-        elif event.key() in (Qt.Key_Return, Qt.Key_Enter):
-            self._confirm()
-        else:
-            super().keyPressEvent(event)
-
-    def _confirm(self):
-        callback = self._on_confirm
-        self.hide()
-        if callback:
-            callback()
-
-
-class _TextButton(QPushButton):
-    def __init__(self, text: str, signal_or_callback, filled: bool = False, parent=None):
-        super().__init__(text, parent)
-        self.setCursor(Qt.PointingHandCursor)
-        self.setFixedHeight(36)
-        self.setMinimumWidth(92)
-        if hasattr(signal_or_callback, "emit"):
-            self.clicked.connect(lambda _checked=False: signal_or_callback.emit())
-        else:
-            self.clicked.connect(lambda _checked=False: signal_or_callback())
-        if filled:
-            bg = DarkPalette.PRIMARY
-            fg = DarkPalette.ON_PRIMARY
-            hover = DarkPalette.PRIMARY_CONTAINER
-        else:
-            bg = "transparent"
-            fg = DarkPalette.ON_SURFACE
-            hover = DarkPalette.SURFACE_VARIANT
-        self.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {bg};
-                color: {fg};
-                border: 1px solid {DarkPalette.OUTLINE};
-                border-radius: 8px;
-                padding: 0 16px;
-                font-size: 13px;
-                font-weight: 700;
-            }}
-            QPushButton:hover {{
-                background-color: {hover};
-            }}
-        """)
-
 
 # ─────────────────────────────────────────────────────────────────────
 # Custom Graphics View — Zoom + Pan + Crop overlay
@@ -913,9 +672,10 @@ class _ZoomPanView(QGraphicsView):
         )
         self.setFrameShape(QGraphicsView.NoFrame)
         self.setRenderHints(
-            self.renderHints() |
-            QPainter.SmoothPixmapTransform |
-            QPainter.Antialiasing
+            self.renderHints()
+            | QPainter.SmoothPixmapTransform
+            | QPainter.Antialiasing
+            | QPainter.LosslessImageRendering
         )
 
     def wheelEvent(self, event: QWheelEvent):

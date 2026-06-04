@@ -255,6 +255,28 @@ class GalleryView(QWidget):
         if folder:
             self.load_folder(folder)
 
+    def add_image(self, path: str):
+        """
+        Insert a newly created image into the model without reloading
+        the entire folder.  Keeps the list sorted alphabetically and
+        requests a thumbnail immediately.
+        """
+        if not path or self._model.row_for_path(path) >= 0:
+            return  # already present
+        folder = str(Path(path).parent)
+        if folder != self._current_folder:
+            return  # not the active album — nothing to do here
+
+        paths = self._model.paths()
+        paths.append(path)
+        paths.sort()
+        self._model.set_paths(paths)
+        # Immediately request the thumbnail so it appears without delay
+        self._requested_thumbs.add(path)
+        self._manager.request_thumbnail(path, (self._tile_size, self._tile_size))
+        self._empty_label.hide()
+        self._view.show()
+
     def _on_thumbnail_ready(self, path: str, qimage: QImage):
         if self._model.row_for_path(path) < 0:
             return

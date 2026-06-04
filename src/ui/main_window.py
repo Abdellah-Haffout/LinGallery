@@ -241,20 +241,49 @@ class MainWindow(QMainWindow):
         self._gallery_view.remove_image(path)
 
     def _on_image_changed(self, old_path: str, new_path: str):
+        # Invalidate cache entries for both paths
         if old_path:
             self._img_manager.invalidate(old_path)
         if new_path:
             self._img_manager.invalidate(new_path)
-            parent = str(Path(new_path).parent)
-            if parent not in self._scan_roots:
-                self._scan_roots.append(parent)
+            parent_dir = str(Path(new_path).parent)
+            if parent_dir not in self._scan_roots:
+                self._scan_roots.append(parent_dir)
 
+        current_album = self._folder_path_label.text()
+
+        # ── Case 1: in-place edit (rotate/flip/crop overwrite / rename same dir)
+        # old_path == new_path  →  same file touched, just refresh the grid.
         if old_path and old_path == new_path:
             self._gallery_view.refresh_current_folder()
             self._status.showMessage(f"Updated {Path(new_path).name}")
             return
 
-        current_album = self._folder_path_label.text()
+        # ── Case 2: rename within same album
+        # old file gone, new file is in the same folder  →  refresh grid.
+        if (old_path and new_path
+                and str(Path(old_path).parent) == str(Path(new_path).parent)
+                and str(Path(new_path).parent) == current_album):
+            self._gallery_view.refresh_current_folder()
+            self._status.showMessage(f"Renamed to {Path(new_path).name}")
+            return
+
+        # ── Case 3: new image added to the current album (e.g. crop → save as copy)
+        # old_path is empty, new_path lands in the current album  →  inject directly.
+        if not old_path and new_path and str(Path(new_path).parent) == current_album:
+            self._gallery_view.add_image(new_path)
+            self._status.showMessage(f"Added {Path(new_path).name}")
+            return
+
+        # ── Case 4: image deleted from current album (old_path set, new_path empty)
+        # The viewer already calls gallery_view.remove_image() via image_deleted signal,
+        # so nothing extra is needed here unless the album might now be empty.
+        if old_path and not new_path:
+            # remove_image was already handled by _on_image_deleted; just update status
+            self._status.showMessage(f"Deleted {Path(old_path).name}")
+            return
+
+        # ── Case 5: cross-album move or genuinely new folder  →  full rescan.
         target_album = current_album
         if new_path and Path(new_path).parent.exists():
             target_album = str(Path(new_path).parent)
