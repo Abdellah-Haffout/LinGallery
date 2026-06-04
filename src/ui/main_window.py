@@ -13,56 +13,16 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QSize
 from pathlib import Path
 
-from core.constants import DarkPalette, AppConst
+from core.constants import AppConst
 from logic.library_indexer import LibraryIndexer
 from logic.image_manager import ImageManager
 from ui.gallery.album_panel import AlbumPanel
 from ui.gallery.gallery_view import GalleryView
 from ui.viewer.image_viewer import ImageViewer
+
+from pymaterial.components import Column, Row, Divider, DividerProps, TopAppBar, TopAppBarProps, Text, TextProps, StatusBar, StatusBarProps, InteractionState, ButtonProps, FilledButton
+from ui.material_bridge import MaterialQtBridge
 from ui.components.icon_button import IconButton
-
-# Global stylesheet applied to entire app
-_APP_STYLE = f"""
-    * {{
-        font-family: 'Inter', 'Roboto', 'Noto Sans', sans-serif;
-    }}
-    QMainWindow, QWidget {{
-        background-color: {DarkPalette.BACKGROUND};
-        color: {DarkPalette.ON_SURFACE};
-    }}
-    QPushButton {{
-        background-color: {DarkPalette.SURFACE_VARIANT};
-        color: {DarkPalette.ON_SURFACE};
-        border: none;
-        border-radius: {AppConst.CORNER_RADIUS}px;
-        padding: 0 20px;
-        font-weight: 600;
-        font-size: 13px;
-    }}
-    QPushButton:hover {{
-        background-color: {DarkPalette.PRIMARY_CONTAINER};
-        color: {DarkPalette.ON_PRIMARY_CONTAINER};
-    }}
-    QPushButton:pressed {{
-        background-color: {DarkPalette.PRIMARY};
-        color: {DarkPalette.ON_PRIMARY};
-    }}
-    QStatusBar {{
-        background-color: {DarkPalette.SURFACE};
-        color: {DarkPalette.ON_SURFACE_VARIANT};
-        font-size: 12px;
-        border-top: 1px solid {DarkPalette.DIVIDER};
-    }}
-    QToolTip {{
-        background-color: {DarkPalette.SURFACE_CONTAINER};
-        color: {DarkPalette.ON_SURFACE};
-        border: 1px solid {DarkPalette.OUTLINE};
-        border-radius: 4px;
-        padding: 4px 8px;
-        font-size: 12px;
-    }}
-"""
-
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -71,6 +31,9 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1200, 760)
         self.resize(1400, 900)
 
+        self._bridge = MaterialQtBridge.get()
+        self.setStyleSheet(f"background-color: {self._bridge.theme.color_scheme.background}; color: {self._bridge.theme.color_scheme.on_surface};")
+
         # Shared image manager (one pool for whole app)
         self._img_manager = ImageManager(self)
         self._indexer: LibraryIndexer | None = None
@@ -78,7 +41,6 @@ class MainWindow(QMainWindow):
         self._pending_album_select: str | None = None
 
         self._build_ui()
-        self.setStyleSheet(_APP_STYLE)
         self._start_scan()
 
     # ─────────────────────────────────────────────────────────────────
@@ -96,9 +58,8 @@ class MainWindow(QMainWindow):
         self._album_panel.album_selected.connect(self._on_album_selected)
 
         # Divider line
-        div = QWidget()
-        div.setFixedWidth(1)
-        div.setStyleSheet(f"background-color: {DarkPalette.DIVIDER};")
+        div_tree = Divider(component_id="main_div", props=DividerProps(vertical=True))
+        div = self._bridge.builder.build(div_tree, self._gallery_shell)
 
         # Right: top-bar + gallery grid
         right = QWidget()
@@ -106,12 +67,11 @@ class MainWindow(QMainWindow):
         right_lay.setContentsMargins(0, 0, 0, 0)
         right_lay.setSpacing(0)
 
-        top_bar = self._build_gallery_topbar()
+        top_bar = self._build_gallery_topbar(right)
         right_lay.addWidget(top_bar)
 
-        div2 = QWidget()
-        div2.setFixedHeight(1)
-        div2.setStyleSheet(f"background-color: {DarkPalette.DIVIDER};")
+        div2_tree = Divider(component_id="main_div_2")
+        div2 = self._bridge.builder.build(div2_tree, right)
         right_lay.addWidget(div2)
 
         self._gallery_view = GalleryView(self._img_manager)
@@ -135,43 +95,63 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self._stack)
 
         # ── Status Bar ────────────────────────────────────────────────
-        self._status = QStatusBar()
-        self._status.showMessage("Scanning for images…")
+        sb_tree = StatusBar(component_id="main_status_bar", props=StatusBarProps(message="Scanning for images…"))
+        self._status = self._bridge.builder.build(sb_tree, self)
         self.setStatusBar(self._status)
 
-    def _build_gallery_topbar(self) -> QWidget:
-        bar = QWidget()
+    def _build_gallery_topbar(self, parent: QWidget) -> QWidget:
+        # Build using PyMaterialKit TopAppBar, injecting custom widgets.
+        # TopAppBar takes title and actions.
+        # But we need a dynamic folder label in the middle, and custom pyqt buttons.
+        # We can construct it via Row.
+        tree = Row(
+            component_id="gallery_topbar",
+            children=[
+                Text(
+                    component_id="app_logo",
+                    props=TextProps(text=AppConst.APP_NAME)
+                ),
+                Text(
+                    component_id="folder_path_label",
+                    props=TextProps(text="")
+                ),
+                FilledButton(
+                    component_id="add_source_btn",
+                    props=ButtonProps(label="Add Source", on_click=self._add_source)
+                )
+            ]
+        )
+        bar = self._bridge.builder.build(tree, parent)
         bar.setFixedHeight(AppConst.TOP_BAR_HEIGHT)
-        bar.setStyleSheet(f"background-color: {DarkPalette.SURFACE};")
-        lay = QHBoxLayout(bar)
+        bar.setStyleSheet(f"background-color: {self._bridge.theme.color_scheme.surface};")
+        
+        # Override layout to match old style (margins, spacing, stretch)
+        lay = bar.layout()
         lay.setContentsMargins(20, 0, 16, 0)
         lay.setSpacing(12)
-
-        # App name / logo
-        logo = QLabel(AppConst.APP_NAME)
-        logo.setStyleSheet(
-            f"font-size: 20px; font-weight: 800; "
-            f"color: {DarkPalette.PRIMARY}; letter-spacing: -0.5px;"
-        )
-
-        self._folder_path_label = QLabel("")
-        self._folder_path_label.setStyleSheet(
-            f"color: {DarkPalette.ON_SURFACE_VARIANT}; font-size: 12px;"
-        )
-
-        add_btn = QPushButton("Add Source")
-        add_btn.setFixedSize(130, 38)
-        add_btn.clicked.connect(self._add_source)
-
+        
+        logo = bar.findChild(QLabel, "app_logo")
+        if logo:
+            logo.setStyleSheet(
+                f"font-size: 20px; font-weight: 800; "
+                f"color: {self._bridge.theme.color_scheme.primary}; letter-spacing: -0.5px;"
+            )
+            
+        self._folder_path_label = bar.findChild(QLabel, "folder_path_label")
+        if self._folder_path_label:
+            self._folder_path_label.setStyleSheet(
+                f"color: {self._bridge.theme.color_scheme.on_surface_variant}; font-size: 12px;"
+            )
+            # Add stretch before folder path or between folder path and buttons
+            lay.insertSpacing(1, 16)
+            lay.insertStretch(3)
+            
+        # Manually inject IconButton (hasn't been fully replaced in PyMaterialKit yet for standalone use without Icon component)
+        # Actually, let's use the old IconButton for now, but style it via the theme.
         self._rescan_btn = IconButton("sort", tooltip="Rescan library")
         self._rescan_btn.clicked.connect(lambda: self._start_scan())
-
-        lay.addWidget(logo)
-        lay.addSpacing(16)
-        lay.addWidget(self._folder_path_label)
-        lay.addStretch()
-        lay.addWidget(self._rescan_btn)
-        lay.addWidget(add_btn)
+        lay.insertWidget(4, self._rescan_btn)
+        
         return bar
 
     # ─────────────────────────────────────────────────────────────────
@@ -226,7 +206,8 @@ class MainWindow(QMainWindow):
     # ─────────────────────────────────────────────────────────────────
     def _on_album_selected(self, folder_path: str):
         self._gallery_view.load_folder(folder_path)
-        self._folder_path_label.setText(folder_path)
+        if hasattr(self, "_folder_path_label") and self._folder_path_label:
+            self._folder_path_label.setText(folder_path)
 
     def _open_viewer(self, path: str, image_list: list, index: int):
         self._image_viewer.load(image_list, index)
@@ -250,7 +231,7 @@ class MainWindow(QMainWindow):
             if parent_dir not in self._scan_roots:
                 self._scan_roots.append(parent_dir)
 
-        current_album = self._folder_path_label.text()
+        current_album = self._folder_path_label.text() if hasattr(self, "_folder_path_label") and self._folder_path_label else ""
 
         # ── Case 1: in-place edit (rotate/flip/crop overwrite / rename same dir)
         # old_path == new_path  →  same file touched, just refresh the grid.

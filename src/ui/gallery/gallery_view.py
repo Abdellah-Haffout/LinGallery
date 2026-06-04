@@ -26,8 +26,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.constants import AppConst, DarkPalette
+from core.constants import AppConst
 from logic.image_manager import ImageManager
+from ui.material_bridge import MaterialQtBridge
 
 
 class _ImageGridModel(QAbstractListModel):
@@ -91,6 +92,7 @@ class _GalleryDelegate(QStyledItemDelegate):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._radius = 8
+        self._bridge = MaterialQtBridge.get()
 
     def paint(self, painter: QPainter, option, index: QModelIndex):
         painter.save()
@@ -101,11 +103,13 @@ class _GalleryDelegate(QStyledItemDelegate):
         selected = bool(option.state & QStyle.State_Selected)
         hover = bool(option.state & QStyle.State_MouseOver)
 
-        bg = QColor(DarkPalette.SURFACE_CONTAINER)
+        theme = self._bridge.theme
+
+        bg = QColor(theme.color_scheme.surface_container)
         if selected:
-            bg = QColor(DarkPalette.PRIMARY_CONTAINER)
+            bg = QColor(theme.color_scheme.primary_container)
         elif hover:
-            bg = QColor(DarkPalette.SURFACE_VARIANT)
+            bg = QColor(theme.color_scheme.surface_variant)
 
         painter.setPen(Qt.NoPen)
         painter.setBrush(bg)
@@ -129,12 +133,12 @@ class _GalleryDelegate(QStyledItemDelegate):
             painter.drawPixmap(image_rect, scaled, source)
             painter.setClipping(False)
         else:
-            painter.setPen(QPen(QColor(DarkPalette.OUTLINE), 1))
-            painter.setBrush(QColor(DarkPalette.SURFACE_VARIANT))
+            painter.setPen(QPen(QColor(theme.color_scheme.outline), 1))
+            painter.setBrush(QColor(theme.color_scheme.surface_variant))
             painter.drawRoundedRect(image_rect.adjusted(16, 16, -16, -16), 6, 6)
 
         if selected:
-            painter.setPen(QPen(QColor(DarkPalette.PRIMARY), 3))
+            painter.setPen(QPen(QColor(theme.color_scheme.primary), 3))
             painter.setBrush(Qt.NoBrush)
             painter.drawRoundedRect(rect.adjusted(2, 2, -2, -2), self._radius, self._radius)
 
@@ -158,6 +162,7 @@ class GalleryView(QWidget):
         self._requested_thumbs: set[str] = set()
         self._tile_size = 160
         self._model = _ImageGridModel(self)
+        self._bridge = MaterialQtBridge.get()
         self._setup_ui()
         self._manager.thumbnail_ready.connect(self._on_thumbnail_ready)
 
@@ -169,7 +174,7 @@ class GalleryView(QWidget):
         self._empty_label = QLabel("Open a folder or select an album to browse images")
         self._empty_label.setAlignment(Qt.AlignCenter)
         self._empty_label.setStyleSheet(
-            f"color: {DarkPalette.ON_SURFACE_VARIANT}; font-size: 15px;"
+            f"color: {self._bridge.theme.color_scheme.on_surface_variant}; font-size: 15px;"
         )
         layout.addWidget(self._empty_label)
 
@@ -195,12 +200,12 @@ class GalleryView(QWidget):
                 outline: none;
             }}
             QScrollBar:vertical {{
-                background: {DarkPalette.BACKGROUND};
+                background: {self._bridge.theme.color_scheme.background};
                 width: 6px;
                 border-radius: 3px;
             }}
             QScrollBar::handle:vertical {{
-                background: {DarkPalette.OUTLINE};
+                background: {self._bridge.theme.color_scheme.outline};
                 border-radius: 3px;
             }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{

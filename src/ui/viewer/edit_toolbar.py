@@ -1,14 +1,14 @@
 """
-LinGallery — Edit Toolbar (bottom bar of the viewer).
-Rotate, Flip, Crop — all actions call processing.image_ops and reload.
+LinGallery — Bottom Action Toolbar for ImageViewer.
 """
 from __future__ import annotations
 
 from PySide6.QtWidgets import QWidget, QHBoxLayout
 from PySide6.QtCore import Signal
 
-from core.constants import DarkPalette, AppConst
+from core.constants import AppConst
 from ui.components.icon_button import IconButton
+from ui.material_bridge import MaterialQtBridge
 
 
 class EditToolbar(QWidget):
@@ -30,16 +30,18 @@ class EditToolbar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedHeight(AppConst.BOTTOM_BAR_HEIGHT)
+        self._bridge = MaterialQtBridge.get()
         self._setup_ui()
 
     def _setup_ui(self):
+        theme = self._bridge.theme
         layout = QHBoxLayout(self)
         layout.setContentsMargins(16, 8, 16, 8)
         layout.setSpacing(8)
 
         self.setStyleSheet(
-            f"background-color: {DarkPalette.SURFACE};"
-            f"border-top: 1px solid {DarkPalette.DIVIDER};"
+            f"background-color: {theme.color_scheme.surface};"
+            f"border-top: 1px solid {theme.color_scheme.outline_variant};"
         )
 
         def btn(icon, tip, signal):

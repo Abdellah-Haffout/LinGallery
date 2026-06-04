@@ -18,7 +18,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QTimer, QRectF, QPointF, QRect
 from PySide6.QtGui import QPixmap, QWheelEvent, QPainter, QImage, QKeyEvent, QColor
 
-from core.constants import AppConst, DarkPalette
+from core.constants import AppConst
+from ui.material_bridge import MaterialQtBridge
 from logic.image_manager import ImageManager
 from ui.components.icon_button import IconButton
 from ui.viewer.slideshow_controller import SlideshowController
@@ -39,6 +40,8 @@ class ImageViewer(QWidget):
 
     def __init__(self, image_manager: ImageManager | None = None, parent=None):
         super().__init__(parent)
+        self._bridge = MaterialQtBridge.get()
+        self._bridge = MaterialQtBridge.get()
         self._manager = image_manager
         self._image_list: List[str] = []
         self._current_index: int = 0
@@ -66,8 +69,8 @@ class ImageViewer(QWidget):
         self._top_bar = QWidget()
         self._top_bar.setFixedHeight(AppConst.TOP_BAR_HEIGHT)
         self._top_bar.setStyleSheet(
-            f"background-color: {DarkPalette.SURFACE};"
-            f"border-bottom: 1px solid {DarkPalette.DIVIDER};"
+            f"background-color: {self._bridge.theme.color_scheme.surface};"
+            f"border-bottom: 1px solid {self._bridge.theme.color_scheme.outline_variant};"
         )
         top = QHBoxLayout(self._top_bar)
         top.setContentsMargins(8, 8, 8, 8)
@@ -78,11 +81,11 @@ class ImageViewer(QWidget):
 
         self._title_label = QLabel("")
         self._title_label.setStyleSheet(
-            f"color: {DarkPalette.ON_SURFACE}; font-size: 14px; font-weight: 600;"
+            f"color: {self._bridge.theme.color_scheme.on_surface}; font-size: 14px; font-weight: 600;"
         )
         self._counter_label = QLabel("")
         self._counter_label.setStyleSheet(
-            f"color: {DarkPalette.ON_SURFACE_VARIANT}; font-size: 12px;"
+            f"color: {self._bridge.theme.color_scheme.on_surface_variant}; font-size: 12px;"
         )
 
         self._zoom_out_btn    = IconButton("zoom_out", tooltip="Zoom Out (-)")
@@ -560,10 +563,11 @@ class _CropActionBar(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._bridge = MaterialQtBridge.get()
         self.setFixedHeight(56)
         self.setStyleSheet(
-            f"background-color: {DarkPalette.SURFACE};"
-            f"border-top: 1px solid {DarkPalette.DIVIDER};"
+            f"background-color: {self._bridge.theme.color_scheme.surface};"
+            f"border-top: 1px solid {self._bridge.theme.color_scheme.outline_variant};"
         )
         layout = QHBoxLayout(self)
         layout.setContentsMargins(16, 8, 16, 8)
@@ -571,7 +575,7 @@ class _CropActionBar(QWidget):
 
         self._message = QLabel("")
         self._message.setStyleSheet(
-            f"color: {DarkPalette.ON_SURFACE}; font-size: 13px; font-weight: 600;"
+            f"color: {self._bridge.theme.color_scheme.on_surface}; font-size: 13px; font-weight: 600;"
         )
         layout.addWidget(self._message)
         layout.addStretch()
@@ -592,10 +596,11 @@ class _CropActionBar(QWidget):
 class _InfoPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._bridge = MaterialQtBridge.get()
         self.setFixedWidth(320)
         self.setStyleSheet(
-            f"background-color: {DarkPalette.SURFACE};"
-            f"border-left: 1px solid {DarkPalette.DIVIDER};"
+            f"background-color: {self._bridge.theme.color_scheme.surface};"
+            f"border-left: 1px solid {self._bridge.theme.color_scheme.outline_variant};"
         )
 
         layout = QVBoxLayout(self)
@@ -604,7 +609,7 @@ class _InfoPanel(QWidget):
 
         title = QLabel("Details")
         title.setStyleSheet(
-            f"color: {DarkPalette.ON_SURFACE}; font-size: 18px; font-weight: 800;"
+            f"color: {self._bridge.theme.color_scheme.on_surface}; font-size: 18px; font-weight: 800;"
         )
         layout.addWidget(title)
 
@@ -633,13 +638,13 @@ class _InfoPanel(QWidget):
     def _add_row(self, key: str, value: str):
         key_label = QLabel(key)
         key_label.setStyleSheet(
-            f"color: {DarkPalette.ON_SURFACE_VARIANT}; font-size: 12px;"
+            f"color: {self._bridge.theme.color_scheme.on_surface_variant}; font-size: 12px;"
         )
         value_label = QLabel(value)
         value_label.setWordWrap(True)
         value_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         value_label.setStyleSheet(
-            f"color: {DarkPalette.ON_SURFACE}; font-size: 12px;"
+            f"color: {self._bridge.theme.color_scheme.on_surface}; font-size: 12px;"
         )
         self._form.addRow(key_label, value_label)
 
@@ -653,6 +658,7 @@ class _ZoomPanView(QGraphicsView):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._bridge = MaterialQtBridge.get()
         self._crop_active = False
         self._crop_state = "idle"
         self._crop_origin = QPointF()
@@ -668,7 +674,7 @@ class _ZoomPanView(QGraphicsView):
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setStyleSheet(
-            f"background-color: {DarkPalette.BACKGROUND}; border: none;"
+            f"background-color: {self._bridge.theme.color_scheme.background}; border: none;"
         )
         self.setFrameShape(QGraphicsView.NoFrame)
         self.setRenderHints(
@@ -787,7 +793,7 @@ class _ZoomPanView(QGraphicsView):
 
     def _crop_pen(self):
         from PySide6.QtGui import QPen
-        p = QPen(QColor(DarkPalette.PRIMARY))
+        p = QPen(QColor(self._bridge.theme.color_scheme.primary))
         p.setWidth(2)
         p.setStyle(Qt.SolidLine)
         return p
@@ -838,7 +844,7 @@ class _ZoomPanView(QGraphicsView):
                 brush=QColor(0, 0, 0, 0),
             )
             # Add subtle inner shade fill for Material feel
-            brush = QColor(DarkPalette.PRIMARY)
+            brush = QColor(self._bridge.theme.color_scheme.primary)
             brush.setAlpha(35)
             self._crop_rect_item.setBrush(brush)
             self._crop_rect_item.setZValue(10)
@@ -978,8 +984,8 @@ class _ZoomPanView(QGraphicsView):
             QPointF(rect.right(), rect.bottom()),
         ]
         from PySide6.QtGui import QBrush, QPen
-        pen = QPen(QColor(DarkPalette.ON_PRIMARY_CONTAINER), max(1, int(size / 8)))
-        brush = QBrush(QColor(DarkPalette.PRIMARY))
+        pen = QPen(QColor(self._bridge.theme.color_scheme.on_primary_container), max(1, int(size / 8)))
+        brush = QBrush(QColor(self._bridge.theme.color_scheme.primary))
         for point in points:
             handle = self.scene().addRect(
                 point.x() - half,
@@ -1020,6 +1026,7 @@ class _NavButton(QWidget):
 
     def __init__(self, icon_name: str, tooltip: str = "", parent=None):
         super().__init__(parent)
+        self._bridge = MaterialQtBridge.get()
         self.setFixedWidth(48)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 0, 4, 0)
@@ -1029,5 +1036,5 @@ class _NavButton(QWidget):
         lay.addWidget(btn)
         lay.addStretch()
         self.setStyleSheet(
-            f"background-color: {DarkPalette.BACKGROUND};"
+            f"background-color: {self._bridge.theme.color_scheme.background};"
         )

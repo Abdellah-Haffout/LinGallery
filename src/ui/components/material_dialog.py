@@ -1,12 +1,23 @@
 from PySide6.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QWidget, QLineEdit, QPushButton, QSizePolicy
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QMouseEvent, QKeyEvent
+from PySide6.QtGui import QMouseEvent, QKeyEvent, QFont
 
 from ui.material_bridge import MaterialQtBridge
 from pymaterial.components.dialogs import AlertDialog, DialogProps
 from pymaterial.components.buttons import FilledButton, TextButton, ButtonProps
 from pymaterial.components.textfields import OutlinedTextField, TextFieldProps
-from core.constants import DarkPalette
+
+def _apply_font(widget, text_style):
+    font = QFont(text_style.font_family, int(text_style.size_sp))
+    weight_map = {
+        100: QFont.Weight.Thin, 200: QFont.Weight.ExtraLight, 300: QFont.Weight.Light,
+        400: QFont.Weight.Normal, 500: QFont.Weight.Medium, 600: QFont.Weight.DemiBold,
+        700: QFont.Weight.Bold, 800: QFont.Weight.ExtraBold, 900: QFont.Weight.Black,
+    }
+    font.setWeight(weight_map.get(text_style.weight, QFont.Weight.Normal))
+    if text_style.letter_spacing_sp != 0.0:
+        font.setLetterSpacing(QFont.AbsoluteSpacing, text_style.letter_spacing_sp)
+    widget.setFont(font)
 
 class MD3Button(QPushButton):
     def __init__(self, bridge: MaterialQtBridge, text: str, is_filled: bool = False, parent=None):
@@ -20,23 +31,23 @@ class MD3Button(QPushButton):
         else:
             btn_comp = TextButton(f"btn_{text}", props=props)
             
-        resolved = btn_comp.render(bridge.context)["resolved_tokens"]
+        resolved = btn_comp.render(bridge.builder.context)["resolved_tokens"]
         
         bg_color = resolved["container_color"]
         fg_color = resolved["label_color"]
         
         radius = 20
-        font = bridge.to_qfont(resolved["text_style"])
-        self.setFont(font)
+        _apply_font(self, resolved["text_style"])
         
+        theme = bridge.theme
         if is_filled:
-            hover_bg = DarkPalette.PRIMARY_CONTAINER
+            hover_bg = theme.color_scheme.primary_container
         else:
-            hover_bg = DarkPalette.SURFACE_VARIANT
+            hover_bg = theme.color_scheme.surface_variant
             
         border = ""
         if resolved.get("has_outline"):
-            border = f"border: 1px solid {DarkPalette.OUTLINE};"
+            border = f"border: 1px solid {theme.color_scheme.outline};"
         else:
             border = "border: none;"
             
@@ -60,11 +71,13 @@ class MD3TextField(QLineEdit):
         
         props = TextFieldProps(label=label, value=value)
         tf_comp = OutlinedTextField("tf", props=props)
-        resolved = tf_comp.render(bridge.context)["resolved_tokens"]
+        resolved = tf_comp.render(bridge.builder.context)["resolved_tokens"]
         
         bg_color = resolved["container_color"]
         outline_color = resolved["outline_color"]
-        indicator_color = resolved.get("indicator_color", DarkPalette.PRIMARY)
+        
+        theme = bridge.theme
+        indicator_color = resolved.get("indicator_color", theme.color_scheme.primary)
         
         shape = resolved.get("shape", 4.0)
         if hasattr(shape, "top_start_dp"):
@@ -72,18 +85,17 @@ class MD3TextField(QLineEdit):
         else:
             radius = int(shape)
             
-        font = bridge.to_qfont(resolved["text_style"])
-        self.setFont(font)
+        _apply_font(self, resolved["text_style"])
         
         self.setPlaceholderText(label)
         self.setStyleSheet(f"""
             QLineEdit {{
                 background-color: {bg_color};
-                color: {DarkPalette.ON_SURFACE};
+                color: {theme.color_scheme.on_surface};
                 border: 1px solid {outline_color};
                 border-radius: {radius}px;
                 padding: 0 16px;
-                selection-background-color: {DarkPalette.PRIMARY_CONTAINER};
+                selection-background-color: {theme.color_scheme.primary_container};
             }}
             QLineEdit:focus {{
                 border: 2px solid {indicator_color};
@@ -95,14 +107,15 @@ class MaterialDialog(QFrame):
     def __init__(self, parent: QWidget, title: str, content_text: str = "", content_widget: QWidget = None):
         super().__init__(parent)
         self.setObjectName("materialDialogOverlay")
-        self.bridge = MaterialQtBridge()
+        self.bridge = MaterialQtBridge.get()
+        theme = self.bridge.theme
         
         dialog_comp = AlertDialog("md3_dialog", props=DialogProps())
-        self.resolved = dialog_comp.render(self.bridge.context)["resolved_tokens"]
+        self.resolved = dialog_comp.render(self.bridge.builder.context)["resolved_tokens"]
         
         self.setStyleSheet(f"""
             QFrame#materialDialogOverlay {{
-                background-color: {DarkPalette.SCRIM}80;
+                background-color: {theme.color_scheme.scrim}80;
             }}
         """)
         
@@ -113,7 +126,16 @@ class MaterialDialog(QFrame):
         self.dialog_box = QFrame(self)
         self.dialog_box.setObjectName("dialogBox")
         
-        self.bridge.apply_dialog_style(self.dialog_box, self.resolved)
+        bg_color = self.resolved.get("container_color", theme.color_scheme.surface)
+        radius = int(self.resolved.get("shape", 28).top_start_dp) if hasattr(self.resolved.get("shape"), "top_start_dp") else 28
+        
+        self.dialog_box.setStyleSheet(f"""
+            QFrame#dialogBox {{
+                background-color: {bg_color};
+                border: 1px solid {theme.color_scheme.outline};
+                border-radius: {radius}px;
+            }}
+        """)
         
         padding = int(self.resolved.get("padding", 24))
         spacing = int(self.resolved.get("spacing", 24))
@@ -129,16 +151,14 @@ class MaterialDialog(QFrame):
         
         if title:
             self.title_label = QLabel(title)
-            title_font = self.bridge.to_qfont(self.resolved["title_typography"])
-            self.title_label.setFont(title_font)
+            _apply_font(self.title_label, self.resolved["title_typography"])
             self.title_label.setStyleSheet(f"color: {self.resolved['title_color']};")
             box_layout.addWidget(self.title_label)
             
         if content_text:
             self.content_label = QLabel(content_text)
             self.content_label.setWordWrap(True)
-            content_font = self.bridge.to_qfont(self.resolved["supporting_text_typography"])
-            self.content_label.setFont(content_font)
+            _apply_font(self.content_label, self.resolved["supporting_text_typography"])
             self.content_label.setStyleSheet(f"color: {self.resolved['supporting_text_color']};")
             box_layout.addWidget(self.content_label)
             
