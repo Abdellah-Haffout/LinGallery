@@ -78,7 +78,7 @@ This will install all the libraries LinGallery needs to run.
 Start the application:
 
 ```bash
-python3 src/main.py
+./venv/bin/python3 src/main.py
 ```
 
 The LinGallery window will open. Click on a folder to browse your images.
