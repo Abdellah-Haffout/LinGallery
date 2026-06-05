@@ -19,8 +19,8 @@ from core.constants import AppConst
 # Worker signals (must live in a QObject, not QRunnable)
 # ─────────────────────────────────────────────────────────────────────
 class _LoadSignals(QObject):
-    loaded = Signal(str, QImage)   # (path, image)
-    error  = Signal(str, str)      # (path, message)
+    loaded = Signal(str, QImage, int)   # (path, image, generation)
+    error  = Signal(str, str, int)      # (path, message, generation)
     
     def __del__(self):
         """Prevent crashes when tasks are deleted during shutdown."""
@@ -39,18 +39,19 @@ class _ThumbTask(QRunnable):
     Decodes a thumbnail for the gallery grid.
     Checks disk cache first; generates + saves if missing.
     """
-    def __init__(self, path: str, size: tuple[int, int], cache: CacheManager):
+    def __init__(self, path: str, size: tuple[int, int], cache: CacheManager, generation: int):
         super().__init__()
         self.setAutoDelete(True)
         self.path = path
         self.size = size
         self.cache = cache
+        self.generation = generation
         self.signals = _LoadSignals()
 
     def run(self):
         if not os.path.exists(self.path):
             try:
-                self.signals.error.emit(self.path, "File not found")
+                self.signals.error.emit(self.path, "File not found", self.generation)
             except RuntimeError:
                 pass
             return
@@ -61,7 +62,7 @@ class _ThumbTask(QRunnable):
             qimg = _pil_to_qimage(disk_img)
             if qimg and not qimg.isNull():
                 try:
-                    self.signals.loaded.emit(self.path, qimg)
+                    self.signals.loaded.emit(self.path, qimg, self.generation)
                 except RuntimeError:
                     pass
                 return
@@ -78,7 +79,7 @@ class _ThumbTask(QRunnable):
             img = reader.read()
             if img.isNull():
                 try:
-                    self.signals.error.emit(self.path, reader.errorString())
+                    self.signals.error.emit(self.path, reader.errorString(), self.generation)
                 except RuntimeError:
                     pass
             else:
@@ -90,12 +91,12 @@ class _ThumbTask(QRunnable):
                 except Exception:
                     pass
                 try:
-                    self.signals.loaded.emit(self.path, img)
+                    self.signals.loaded.emit(self.path, img, self.generation)
                 except RuntimeError:
                     pass
         except Exception as e:
             try:
-                self.signals.error.emit(self.path, str(e))
+                self.signals.error.emit(self.path, str(e), self.generation)
             except RuntimeError:
                 pass
 
@@ -104,17 +105,18 @@ class _FullImageTask(QRunnable):
     """Decodes an image for the viewer, downscaled to the display's
     maximum dimension to avoid storing multi-megapixel buffers that will
     never be shown at native resolution."""
-    def __init__(self, path: str, max_dimension: int = 0):
+    def __init__(self, path: str, max_dimension: int = 0, generation: int = 0):
         super().__init__()
         self.setAutoDelete(True)
         self.path = path
         self.max_dimension = max_dimension
+        self.generation = generation
         self.signals = _LoadSignals()
 
     def run(self):
         if not os.path.exists(self.path):
             try:
-                self.signals.error.emit(self.path, "File not found")
+                self.signals.error.emit(self.path, "File not found", self.generation)
             except RuntimeError:
                 pass
             return
@@ -130,17 +132,17 @@ class _FullImageTask(QRunnable):
             img = reader.read()
             if img.isNull():
                 try:
-                    self.signals.error.emit(self.path, reader.errorString())
+                    self.signals.error.emit(self.path, reader.errorString(), self.generation)
                 except RuntimeError:
                     pass
             else:
                 try:
-                    self.signals.loaded.emit(self.path, img)
+                    self.signals.loaded.emit(self.path, img, self.generation)
                 except RuntimeError:
                     pass
         except Exception as e:
             try:
-                self.signals.error.emit(self.path, str(e))
+                self.signals.error.emit(self.path, str(e), self.generation)
             except RuntimeError:
                 pass
 
@@ -187,12 +189,15 @@ class ImageManager(QObject):
         self._cache = CacheManager(capacity_mb=AppConst.MAX_CACHE_MB)
         self._pending_thumbs: set[str] = set()
         self._pending_full: set[str] = set()
+        self._generation = 0
 
-    def clear_cache(self):
-        """Clear all cached images."""
+    def flush_state(self):
+        """Clear all cached images and reset runtime state for a refresh."""
         self._cache.clear()
         self._pending_thumbs.clear()
         self._pending_full.clear()
+        self._generation += 1
+        print(f"[ImageManager] State flushed. Advanced to generation {self._generation}.")
 
     # ── Thumbnails ────────────────────────────────────────────────────
     def request_thumbnail(self, path: str, size: tuple[int, int] = None, priority: int = 0, force: bool = False) -> None:
@@ -213,12 +218,15 @@ class ImageManager(QObject):
 
         self._pending_thumbs.add(path)
 
-        task = _ThumbTask(path, size, self._cache)
+        task = _ThumbTask(path, size, self._cache, self._generation)
         task.signals.loaded.connect(self._on_thumb_loaded)
         task.signals.error.connect(self._on_error)
         self._pool.start(task, priority)
 
-    def _on_thumb_loaded(self, path: str, img: QImage) -> None:
+    def _on_thumb_loaded(self, path: str, img: QImage, generation: int) -> None:
+        if generation != self._generation:
+            print(f"[ImageManager] Discarding stale thumb task for {path} (gen {generation} vs {self._generation})")
+            return
         self._pending_thumbs.discard(path)
         size_mb = img.sizeInBytes() / (1024 * 1024)
         self._cache.put(f"thumb:{path}", img, size_mb)
@@ -235,18 +243,23 @@ class ImageManager(QObject):
             return
         self._pending_full.add(path)
 
-        task = _FullImageTask(path, max_dimension=max_dimension)
+        task = _FullImageTask(path, max_dimension=max_dimension, generation=self._generation)
         task.signals.loaded.connect(self._on_full_loaded)
         task.signals.error.connect(self._on_error)
         self._pool.start(task)
 
-    def _on_full_loaded(self, path: str, img: QImage) -> None:
+    def _on_full_loaded(self, path: str, img: QImage, generation: int) -> None:
+        if generation != self._generation:
+            print(f"[ImageManager] Discarding stale full task for {path} (gen {generation} vs {self._generation})")
+            return
         self._pending_full.discard(path)
         size_mb = img.sizeInBytes() / (1024 * 1024)
         self._cache.put(f"full:{path}", img, size_mb)
         self.full_image_ready.emit(path, img)
 
-    def _on_error(self, path: str, msg: str) -> None:
+    def _on_error(self, path: str, msg: str, generation: int) -> None:
+        if generation != self._generation:
+            return
         self._pending_thumbs.discard(path)
         self._pending_full.discard(path)
         self.load_error.emit(path, msg)

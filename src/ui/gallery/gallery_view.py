@@ -277,6 +277,14 @@ class GalleryView(QWidget):
             self._view.hide()
             self._empty_label.show()
 
+    def clear(self):
+        """Flush in-memory state during a refresh."""
+        self._current_folder = ""
+        self._requested_thumbs.clear()
+        self._model.set_paths([])
+        self._view.hide()
+        self._empty_label.show()
+
     def refresh_current_folder(self):
         folder = self._current_folder
         self._current_folder = ""

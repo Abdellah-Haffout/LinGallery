@@ -145,15 +145,32 @@ class MainWindow(QMainWindow):
             
         # Manually inject IconButton (hasn't been fully replaced in PyMaterialKit yet for standalone use without Icon component)
         # Actually, let's use the old IconButton for now, but style it via the theme.
-        self._rescan_btn = IconButton("sort", tooltip="Rescan library")
-        self._rescan_btn.clicked.connect(lambda: self._start_scan())
-        lay.insertWidget(4, self._rescan_btn)
+        self._refresh_btn = IconButton("refresh", tooltip="Refresh library")
+        self._refresh_btn.clicked.connect(lambda: self._refresh_library())
+        lay.insertWidget(4, self._refresh_btn)
         
         return bar
 
     # ─────────────────────────────────────────────────────────────────
-    # Library Scanning
+    # Library Scanning & Refresh
     # ─────────────────────────────────────────────────────────────────
+    def _refresh_library(self):
+        current_album = self._folder_path_label.text() if hasattr(self, "_folder_path_label") and self._folder_path_label else ""
+        
+        print("[MainWindow] Starting full library refresh pipeline...")
+        # 1 & 2: Flush memory
+        self._gallery_view.clear()
+        self._img_manager.flush_state()
+        self._album_panel.clear()
+        
+        # Verify if current album still exists on disk before attempting to restore it
+        if current_album and not Path(current_album).exists():
+            print(f"[MainWindow] Previously selected album {current_album} no longer exists. Discarding selection.")
+            current_album = ""
+            
+        # 3 & 4: Full Rescan and Rebuild
+        self._start_scan(select_album=current_album)
+
     def _start_scan(self, select_album: str | None = None):
         if self._indexer and self._indexer.isRunning():
             self._indexer.stop()

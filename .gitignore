@@ -73,6 +73,9 @@ venv.bak/
 .DS_Store
 Thumbs.db
 
+# Debugging
+src/debugging/
+
 # Project specific
 *.db
 *.sqlite3
