@@ -18,7 +18,6 @@ from logic.library_indexer import LibraryIndexer
 from logic.image_manager import ImageManager
 from ui.gallery.album_panel import AlbumPanel
 from ui.gallery.gallery_view import GalleryView
-from ui.viewer.image_viewer import ImageViewer
 
 from pymaterial.components import Column, Row, Divider, DividerProps, TopAppBar, TopAppBarProps, Text, TextProps, StatusBar, StatusBarProps, InteractionState, ButtonProps, FilledButton
 from ui.material_bridge import MaterialQtBridge
@@ -82,16 +81,14 @@ class MainWindow(QMainWindow):
         gallery_lay.addWidget(div)
         gallery_lay.addWidget(right, stretch=1)
 
-        # ── Image Viewer ──────────────────────────────────────────────
-        self._image_viewer = ImageViewer(self._img_manager)
-        self._image_viewer.back_requested.connect(self._close_viewer)
-        self._image_viewer.image_deleted.connect(self._on_image_deleted)
-        self._image_viewer.image_changed.connect(self._on_image_changed)
+        self._image_viewer = None  # created lazily on first open
+        self._image_viewer_back = self._close_viewer
+        self._image_viewer_deleted = self._on_image_deleted
+        self._image_viewer_changed = self._on_image_changed
 
         # ── Stack ─────────────────────────────────────────────────────
         self._stack = QStackedWidget()
         self._stack.addWidget(self._gallery_shell)   # index 0
-        self._stack.addWidget(self._image_viewer)    # index 1
         self.setCentralWidget(self._stack)
 
         # ── Status Bar ────────────────────────────────────────────────
@@ -210,6 +207,15 @@ class MainWindow(QMainWindow):
             self._folder_path_label.setText(folder_path)
 
     def _open_viewer(self, path: str, image_list: list, index: int):
+        if self._image_viewer is None:
+            # Lazy creation — defers the heavy ImageViewer import chain
+            # (PIL, piexif, exifread, QGraphicsView, toolbars) until needed.
+            from ui.viewer.image_viewer import ImageViewer
+            self._image_viewer = ImageViewer(self._img_manager)
+            self._image_viewer.back_requested.connect(self._image_viewer_back)
+            self._image_viewer.image_deleted.connect(self._image_viewer_deleted)
+            self._image_viewer.image_changed.connect(self._image_viewer_changed)
+            self._stack.addWidget(self._image_viewer)
         self._image_viewer.load(image_list, index)
         self._stack.setCurrentWidget(self._image_viewer)
         self._image_viewer.setFocus()
@@ -222,7 +228,10 @@ class MainWindow(QMainWindow):
         self._gallery_view.remove_image(path)
 
     def _on_image_changed(self, old_path: str, new_path: str):
-        # Invalidate cache entries for both paths
+        # Invalidate cache entries AND in-flight pending tasks for both
+        # paths.  This ensures stale decode tasks (started before the
+        # file operation completed) never deposit outdated thumbnails
+        # into the cache.
         if old_path:
             self._img_manager.invalidate(old_path)
         if new_path:

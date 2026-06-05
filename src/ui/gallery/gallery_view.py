@@ -3,6 +3,7 @@ LinGallery — responsive, delegate-painted thumbnail grid.
 """
 from __future__ import annotations
 
+from collections import OrderedDict
 from pathlib import Path
 from typing import List
 
@@ -35,10 +36,16 @@ class _ImageGridModel(QAbstractListModel):
     PathRole = Qt.UserRole + 1
     PixmapRole = Qt.UserRole + 2
 
+    # Maximum number of thumbnails held in memory at any time.
+    # Once exceeded, the least-recently-used entries are evicted.
+    MAX_THUMBNAILS = 200
+
+    thumbnails_evicted = Signal(list)  # emitted with list of evicted paths
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._paths: list[str] = []
-        self._pixmaps: dict[str, QPixmap] = {}
+        self._pixmaps: OrderedDict[str, QPixmap] = OrderedDict()
 
     def rowCount(self, parent=QModelIndex()) -> int:
         return 0 if parent.isValid() else len(self._paths)
@@ -50,7 +57,11 @@ class _ImageGridModel(QAbstractListModel):
         if role == self.PathRole:
             return path
         if role == self.PixmapRole:
-            return self._pixmaps.get(path)
+            # Move to end (most-recently-used) on access
+            if path in self._pixmaps:
+                self._pixmaps.move_to_end(path)
+                return self._pixmaps[path]
+            return None
         if role == Qt.ToolTipRole:
             return Path(path).name
         return None
@@ -68,7 +79,17 @@ class _ImageGridModel(QAbstractListModel):
         row = self.row_for_path(path)
         if row < 0:
             return
+        # Replacing the dict entry releases the old QPixmap's
+        # GPU/server-side resource when its refcount drops to zero.
         self._pixmaps[path] = pixmap
+        self._pixmaps.move_to_end(path)
+        evicted: list[str] = []
+        while len(self._pixmaps) > self.MAX_THUMBNAILS:
+            old_path, old_pm = self._pixmaps.popitem(last=False)
+            evicted.append(old_path)
+            # Pixmap resource released when old_pm goes out of scope.
+        if evicted:
+            self.thumbnails_evicted.emit(evicted)
         idx = self.index(row, 0)
         self.dataChanged.emit(idx, idx, [self.PixmapRole])
 
@@ -116,26 +137,27 @@ class _GalleryDelegate(QStyledItemDelegate):
         painter.drawRoundedRect(rect, self._radius, self._radius)
 
         pixmap = index.data(_ImageGridModel.PixmapRole)
-        image_rect = rect.adjusted(0, 0, 0, 0)
         if isinstance(pixmap, QPixmap) and not pixmap.isNull():
+            target = rect
+            painter.setClipRect(target)
             scaled = pixmap.scaled(
-                image_rect.size(),
+                target.size(),
                 Qt.KeepAspectRatioByExpanding,
                 Qt.SmoothTransformation,
             )
-            source = QRect(
-                max(0, (scaled.width() - image_rect.width()) // 2),
-                max(0, (scaled.height() - image_rect.height()) // 2),
-                image_rect.width(),
-                image_rect.height(),
+            target_rect = QRect(
+                target.center().x() - scaled.width() // 2,
+                target.center().y() - scaled.height() // 2,
+                scaled.width(),
+                scaled.height(),
             )
-            painter.setClipRect(image_rect)
-            painter.drawPixmap(image_rect, scaled, source)
+            source_rect = QRect(0, 0, scaled.width(), scaled.height())
+            painter.drawPixmap(target, scaled, source_rect)
             painter.setClipping(False)
         else:
             painter.setPen(QPen(QColor(theme.color_scheme.outline), 1))
             painter.setBrush(QColor(theme.color_scheme.surface_variant))
-            painter.drawRoundedRect(image_rect.adjusted(16, 16, -16, -16), 6, 6)
+            painter.drawRoundedRect(rect.adjusted(16, 16, -16, -16), 6, 6)
 
         if selected:
             painter.setPen(QPen(QColor(theme.color_scheme.primary), 3))
@@ -165,6 +187,7 @@ class GalleryView(QWidget):
         self._bridge = MaterialQtBridge.get()
         self._setup_ui()
         self._manager.thumbnail_ready.connect(self._on_thumbnail_ready)
+        self._model.thumbnails_evicted.connect(self._on_thumbnails_evicted)
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -265,6 +288,9 @@ class GalleryView(QWidget):
         Insert a newly created image into the model without reloading
         the entire folder.  Keeps the list sorted alphabetically and
         requests a thumbnail immediately.
+
+        Uses Qt model row insertion so existing thumbnails are preserved
+        — only the new image needs to be decoded.
         """
         if not path or self._model.row_for_path(path) >= 0:
             return  # already present
@@ -275,17 +301,35 @@ class GalleryView(QWidget):
         paths = self._model.paths()
         paths.append(path)
         paths.sort()
-        self._model.set_paths(paths)
-        # Immediately request the thumbnail so it appears without delay
+        row = paths.index(path)
+        self._model.beginInsertRows(QModelIndex(), row, row)
+        self._model._paths.insert(row, path)
+        self._model.endInsertRows()
+        # Request thumbnail for the new image only; existing pixmaps
+        # are untouched so no re-decoding is needed.
         self._requested_thumbs.add(path)
-        self._manager.request_thumbnail(path, (self._tile_size, self._tile_size))
+        self._manager.request_thumbnail(path, (self._tile_size, self._tile_size), priority=10)
+        # Trigger a layout pass so visualRect is correct for the new row,
+        # then request any other newly-visible thumbnails.
+        QTimer.singleShot(0, self._request_visible_thumbnails)
         self._empty_label.hide()
         self._view.show()
 
     def _on_thumbnail_ready(self, path: str, qimage: QImage):
         if self._model.row_for_path(path) < 0:
+            # The path isn't currently in the model.  This can happen
+            # when a stale task from before a model rebuild delivers its
+            # result late.  Force a fresh request so the grid is never
+            # left with a blank slot for a valid image.
+            self._requested_thumbs.discard(path)
             return
         self._model.set_thumbnail(path, QPixmap.fromImage(qimage))
+
+    def _on_thumbnails_evicted(self, evicted_paths: list):
+        """Remove evicted paths from the requested set so they are
+        re-requested from ImageManager when scrolled back into view."""
+        for path in evicted_paths:
+            self._requested_thumbs.discard(path)
 
     def _on_double_clicked(self, index: QModelIndex):
         path = index.data(_ImageGridModel.PathRole)

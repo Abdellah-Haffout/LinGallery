@@ -21,6 +21,17 @@ from core.constants import AppConst
 class _LoadSignals(QObject):
     loaded = Signal(str, QImage)   # (path, image)
     error  = Signal(str, str)      # (path, message)
+    
+    def __del__(self):
+        """Prevent crashes when tasks are deleted during shutdown."""
+        try:
+            self.loaded.disconnect()
+        except Exception:
+            pass
+        try:
+            self.error.disconnect()
+        except Exception:
+            pass
 
 
 class _ThumbTask(QRunnable):
@@ -38,7 +49,10 @@ class _ThumbTask(QRunnable):
 
     def run(self):
         if not os.path.exists(self.path):
-            self.signals.error.emit(self.path, "File not found")
+            try:
+                self.signals.error.emit(self.path, "File not found")
+            except RuntimeError:
+                pass
             return
 
         # 1 — Try disk cache
@@ -46,7 +60,10 @@ class _ThumbTask(QRunnable):
         if disk_img is not None:
             qimg = _pil_to_qimage(disk_img)
             if qimg and not qimg.isNull():
-                self.signals.loaded.emit(self.path, qimg)
+                try:
+                    self.signals.loaded.emit(self.path, qimg)
+                except RuntimeError:
+                    pass
                 return
 
         # 2 — Decode via QImageReader (handles all Qt-supported formats)
@@ -60,42 +77,72 @@ class _ThumbTask(QRunnable):
                 reader.setScaledSize(scaled)
             img = reader.read()
             if img.isNull():
-                self.signals.error.emit(self.path, reader.errorString())
-                return
-            # Save to disk cache via PIL for next run
-            try:
-                pil = _qimage_to_pil(img)
-                if pil:
-                    self.cache.save_disk_thumb(self.path, self.size, pil)
-            except Exception:
-                pass
-            self.signals.loaded.emit(self.path, img)
+                try:
+                    self.signals.error.emit(self.path, reader.errorString())
+                except RuntimeError:
+                    pass
+            else:
+                # Save to disk cache via PIL for next run
+                try:
+                    pil = _qimage_to_pil(img)
+                    if pil:
+                        self.cache.save_disk_thumb(self.path, self.size, pil)
+                except Exception:
+                    pass
+                try:
+                    self.signals.loaded.emit(self.path, img)
+                except RuntimeError:
+                    pass
         except Exception as e:
-            self.signals.error.emit(self.path, str(e))
+            try:
+                self.signals.error.emit(self.path, str(e))
+            except RuntimeError:
+                pass
 
 
 class _FullImageTask(QRunnable):
-    """Decodes a full-resolution image for the viewer."""
-    def __init__(self, path: str):
+    """Decodes an image for the viewer, downscaled to the display's
+    maximum dimension to avoid storing multi-megapixel buffers that will
+    never be shown at native resolution."""
+    def __init__(self, path: str, max_dimension: int = 0):
         super().__init__()
         self.setAutoDelete(True)
         self.path = path
+        self.max_dimension = max_dimension
         self.signals = _LoadSignals()
 
     def run(self):
         if not os.path.exists(self.path):
-            self.signals.error.emit(self.path, "File not found")
+            try:
+                self.signals.error.emit(self.path, "File not found")
+            except RuntimeError:
+                pass
             return
         try:
             reader = QImageReader(self.path)
             reader.setAutoTransform(True)
+            if self.max_dimension > 0:
+                native = reader.size()
+                if native.isValid() and native.width() > 0:
+                    target = QSize(self.max_dimension, self.max_dimension)
+                    scaled = native.scaled(target, Qt.KeepAspectRatio)
+                    reader.setScaledSize(scaled)
             img = reader.read()
             if img.isNull():
-                self.signals.error.emit(self.path, reader.errorString())
+                try:
+                    self.signals.error.emit(self.path, reader.errorString())
+                except RuntimeError:
+                    pass
             else:
-                self.signals.loaded.emit(self.path, img)
+                try:
+                    self.signals.loaded.emit(self.path, img)
+                except RuntimeError:
+                    pass
         except Exception as e:
-            self.signals.error.emit(self.path, str(e))
+            try:
+                self.signals.error.emit(self.path, str(e))
+            except RuntimeError:
+                pass
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -141,24 +188,35 @@ class ImageManager(QObject):
         self._pending_thumbs: set[str] = set()
         self._pending_full: set[str] = set()
 
+    def clear_cache(self):
+        """Clear all cached images."""
+        self._cache.clear()
+        self._pending_thumbs.clear()
+        self._pending_full.clear()
+
     # ── Thumbnails ────────────────────────────────────────────────────
-    def request_thumbnail(self, path: str, size: tuple[int, int] = None) -> None:
+    def request_thumbnail(self, path: str, size: tuple[int, int] = None, priority: int = 0, force: bool = False) -> None:
+        """Request a thumbnail.  When *force* is True the pending-set
+        guard is bypassed so a fresh task is always submitted (used
+        after invalidation to override stale in-flight results)."""
         size = size or AppConst.THUMB_SIZE
 
-        # L1: memory
-        cached = self._cache.get(f"thumb:{path}")
-        if cached is not None:
-            self.thumbnail_ready.emit(path, cached)
-            return
+        # L1: memory  (skip when forcing a fresh decode)
+        if not force:
+            cached = self._cache.get(f"thumb:{path}")
+            if cached is not None:
+                self.thumbnail_ready.emit(path, cached)
+                return
 
-        if path in self._pending_thumbs:
-            return
+            if path in self._pending_thumbs:
+                return
+
         self._pending_thumbs.add(path)
 
         task = _ThumbTask(path, size, self._cache)
         task.signals.loaded.connect(self._on_thumb_loaded)
         task.signals.error.connect(self._on_error)
-        self._pool.start(task)
+        self._pool.start(task, priority)
 
     def _on_thumb_loaded(self, path: str, img: QImage) -> None:
         self._pending_thumbs.discard(path)
@@ -167,7 +225,7 @@ class ImageManager(QObject):
         self.thumbnail_ready.emit(path, img)
 
     # ── Full Images ───────────────────────────────────────────────────
-    def request_full_image(self, path: str) -> None:
+    def request_full_image(self, path: str, max_dimension: int = 0) -> None:
         cached = self._cache.get(f"full:{path}")
         if cached is not None:
             self.full_image_ready.emit(path, cached)
@@ -177,7 +235,7 @@ class ImageManager(QObject):
             return
         self._pending_full.add(path)
 
-        task = _FullImageTask(path)
+        task = _FullImageTask(path, max_dimension=max_dimension)
         task.signals.loaded.connect(self._on_full_loaded)
         task.signals.error.connect(self._on_error)
         self._pool.start(task)
@@ -194,7 +252,13 @@ class ImageManager(QObject):
         self.load_error.emit(path, msg)
 
     def invalidate(self, path: str) -> None:
-        """Call after editing an image to force a fresh decode."""
+        """Call after editing an image to force a fresh decode.
+        Clears memory cache, disk cache, AND cancels any in-flight
+        decode tasks so stale results are never stored."""
         self._cache.remove(f"thumb:{path}")
         self._cache.remove(f"full:{path}")
         self._cache.invalidate_disk_thumbs(path)
+        # Cancel in-flight tasks — their results will be discarded
+        # by the late-arrival guards in _on_thumb_loaded / _on_full_loaded.
+        self._pending_thumbs.discard(path)
+        self._pending_full.discard(path)

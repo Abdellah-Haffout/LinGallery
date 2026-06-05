@@ -56,9 +56,24 @@ class CacheManager:
         while self._current_mb > self.capacity_mb and self._mem:
             _, evicted = self._mem.popitem(last=False)
             self._current_mb -= evicted["size"]
+            # Explicitly release the QImage pixel buffer so the allocator
+            # can reclaim the memory instead of keeping it as fragmentation.
+            val = evicted.get("value")
+            if val is not None and hasattr(val, "detach"):
+                try:
+                    val.detach()
+                except Exception:
+                    pass
 
     def clear(self) -> None:
         with self._lock:
+            for key, entry in list(self._mem.items()):
+                val = entry.get("value")
+                if val is not None and hasattr(val, "detach"):
+                    try:
+                        val.detach()
+                    except Exception:
+                        pass
             self._mem.clear()
             self._current_mb = 0.0
 
@@ -67,6 +82,12 @@ class CacheManager:
             entry = self._mem.pop(key, None)
             if entry:
                 self._current_mb = max(0.0, self._current_mb - entry["size"])
+                val = entry.get("value")
+                if val is not None and hasattr(val, "detach"):
+                    try:
+                        val.detach()
+                    except Exception:
+                        pass
 
     # ─── Disk Thumbnail Cache ─────────────────────────────────────────
     def disk_thumb_path(self, image_path: str, size: tuple[int, int]) -> Path:
@@ -80,37 +101,44 @@ class CacheManager:
         return self._disk_dir / f"{path_id}_{content_id}.png"
 
     def has_disk_thumb(self, image_path: str, size: tuple[int, int]) -> bool:
-        return self.disk_thumb_path(image_path, size).exists()
+        with self._lock:
+            return self.disk_thumb_path(image_path, size).exists()
 
     def save_disk_thumb(self, image_path: str, size: tuple[int, int], pil_image) -> None:
-        try:
-            dest = self.disk_thumb_path(image_path, size)
-            pil_image.save(str(dest), "PNG")
-        except Exception:
-            pass
+        with self._lock:
+            try:
+                dest = self.disk_thumb_path(image_path, size)
+                pil_image.save(str(dest), "PNG")
+            except Exception:
+                pass
 
     def load_disk_thumb(self, image_path: str, size: tuple[int, int]):
         """Returns a PIL Image or None."""
-        try:
-            from PIL import Image as PilImage
-            p = self.disk_thumb_path(image_path, size)
-            if p.exists():
-                return PilImage.open(str(p)).copy()
-        except Exception:
-            pass
+        with self._lock:
+            try:
+                from PIL import Image as PilImage
+                p = self.disk_thumb_path(image_path, size)
+                if p.exists():
+                    with PilImage.open(str(p)) as img:
+                        img.load()
+                        return img.copy()
+            except Exception:
+                pass
         return None
 
     def clear_disk_cache(self) -> None:
-        for f in self._disk_dir.glob("*.png"):
-            try:
-                f.unlink()
-            except Exception:
-                pass
+        with self._lock:
+            for f in self._disk_dir.glob("*.png"):
+                try:
+                    f.unlink()
+                except Exception:
+                    pass
 
     def invalidate_disk_thumbs(self, image_path: str) -> None:
-        path_id = _path_hash(image_path)
-        for f in self._disk_dir.glob(f"{path_id}_*.png"):
-            try:
-                f.unlink()
-            except Exception:
-                pass
+        with self._lock:
+            path_id = _path_hash(image_path)
+            for f in self._disk_dir.glob(f"{path_id}_*.png"):
+                try:
+                    f.unlink()
+                except Exception:
+                    pass

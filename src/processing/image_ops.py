@@ -5,6 +5,7 @@ All operations use Pillow and are safe to call from background threads.
 from __future__ import annotations
 import datetime
 import logging
+import math
 import os
 from pathlib import Path
 from typing import Optional
@@ -49,9 +50,10 @@ def _save_image(img: Image.Image, path: str) -> None:
 def rotate(path: str, degrees: int) -> bool:
     """Rotate image by degrees (counter-clockwise). expand=True preserves full image."""
     try:
-        img = ImageOps.exif_transpose(Image.open(path))
-        img = img.rotate(degrees, expand=True)
-        _save_image(img, path)
+        with Image.open(path) as img:
+            img = ImageOps.exif_transpose(img)
+            img = img.rotate(degrees, expand=True)
+            _save_image(img, path)
         return True
     except Exception:
         return False
@@ -60,9 +62,10 @@ def rotate(path: str, degrees: int) -> bool:
 def flip_horizontal(path: str) -> bool:
     """Mirror the image horizontally (left-right)."""
     try:
-        img = ImageOps.exif_transpose(Image.open(path))
-        img = ImageOps.mirror(img)
-        _save_image(img, path)
+        with Image.open(path) as img:
+            img = ImageOps.exif_transpose(img)
+            img = ImageOps.mirror(img)
+            _save_image(img, path)
         return True
     except Exception:
         return False
@@ -71,9 +74,10 @@ def flip_horizontal(path: str) -> bool:
 def flip_vertical(path: str) -> bool:
     """Flip the image vertically (top-bottom)."""
     try:
-        img = ImageOps.exif_transpose(Image.open(path))
-        img = ImageOps.flip(img)
-        _save_image(img, path)
+        with Image.open(path) as img:
+            img = ImageOps.exif_transpose(img)
+            img = ImageOps.flip(img)
+            _save_image(img, path)
         return True
     except Exception:
         return False
@@ -82,17 +86,56 @@ def flip_vertical(path: str) -> bool:
 def crop(path: str, x: int, y: int, width: int, height: int, dest_path: str | None = None) -> bool:
     """Crop the image to the given pixel rectangle."""
     try:
-        img = ImageOps.exif_transpose(Image.open(path))
-        left = max(0, min(x, img.width - 1))
-        top = max(0, min(y, img.height - 1))
-        right = max(left + 1, min(x + width, img.width))
-        bottom = max(top + 1, min(y + height, img.height))
-        box = (left, top, right, bottom)
-        img = img.crop(box)
-        _save_image(img, dest_path or path)
+        with Image.open(path) as img:
+            img = ImageOps.exif_transpose(img)
+            left = max(0, min(int(x), img.width))
+            top = max(0, min(int(y), img.height))
+            right = max(left + 1, min(int(x + width), img.width))
+            bottom = max(top + 1, min(int(y + height), img.height))
+            box = (left, top, right, bottom)
+            img = img.crop(box)
+            _save_image(img, dest_path or path)
         return True
     except Exception:
         return False
+
+
+def map_display_crop_to_source(
+    display_rect: tuple[float, float, float, float],
+    display_size: tuple[float, float],
+    source_size: tuple[int, int],
+) -> Optional[tuple[int, int, int, int]]:
+    """Map a crop rectangle from displayed image coordinates to source pixels."""
+    display_x, display_y, display_width, display_height = display_rect
+    display_image_width, display_image_height = display_size
+    source_width, source_height = source_size
+
+    if (
+        display_image_width <= 0
+        or display_image_height <= 0
+        or source_width <= 0
+        or source_height <= 0
+        or display_width <= 0
+        or display_height <= 0
+    ):
+        return None
+
+    scale_x = source_width / display_image_width
+    scale_y = source_height / display_image_height
+    left = _round_pixel_boundary(display_x * scale_x)
+    top = _round_pixel_boundary(display_y * scale_y)
+    right = _round_pixel_boundary((display_x + display_width) * scale_x)
+    bottom = _round_pixel_boundary((display_y + display_height) * scale_y)
+
+    left = max(0, min(left, source_width))
+    top = max(0, min(top, source_height))
+    right = max(left + 1, min(right, source_width))
+    bottom = max(top + 1, min(bottom, source_height))
+    return left, top, right - left, bottom - top
+
+
+def _round_pixel_boundary(value: float) -> int:
+    return int(math.floor(value + 0.5))
 
 
 def read_exif(path: str) -> dict:
@@ -153,7 +196,16 @@ def read_exif(path: str) -> dict:
 def get_image_dimensions(path: str) -> Optional[tuple[int, int]]:
     """Fast dimension check without fully decoding the image."""
     try:
-        img = Image.open(path)
-        return img.size  # (width, height)
+        with Image.open(path) as img:
+            return img.size  # (width, height)
+    except Exception:
+        return None
+
+
+def get_oriented_image_dimensions(path: str) -> Optional[tuple[int, int]]:
+    """Return dimensions after the same EXIF orientation transform used by edits."""
+    try:
+        with Image.open(path) as img:
+            return ImageOps.exif_transpose(img).size
     except Exception:
         return None

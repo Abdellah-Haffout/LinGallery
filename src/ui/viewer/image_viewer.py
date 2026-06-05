@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QFrame, QFileDialog, QLineEdit, QPushButton
 )
 from PySide6.QtCore import Qt, Signal, QTimer, QRectF, QPointF, QRect
-from PySide6.QtGui import QPixmap, QWheelEvent, QPainter, QImage, QKeyEvent, QColor
+from PySide6.QtGui import QPixmap, QWheelEvent, QPainter, QImage, QKeyEvent, QColor, QGuiApplication
 
 from core.constants import AppConst
 from ui.material_bridge import MaterialQtBridge
@@ -24,9 +24,8 @@ from logic.image_manager import ImageManager
 from ui.components.icon_button import IconButton
 from ui.viewer.slideshow_controller import SlideshowController
 from ui.viewer.edit_toolbar import EditToolbar
-import processing.image_ops as image_ops
-from ui.material_bridge import MaterialQtBridge
 from ui.components.material_dialog import MaterialDialog, MD3TextField, MD3Button
+import processing.image_ops as image_ops
 
 
 class ImageViewer(QWidget):
@@ -41,7 +40,6 @@ class ImageViewer(QWidget):
     def __init__(self, image_manager: ImageManager | None = None, parent=None):
         super().__init__(parent)
         self._bridge = MaterialQtBridge.get()
-        self._bridge = MaterialQtBridge.get()
         self._manager = image_manager
         self._image_list: List[str] = []
         self._current_index: int = 0
@@ -49,6 +47,10 @@ class ImageViewer(QWidget):
         self._pending_path: str = ""
         self._pending_crop_rect: tuple[int, int, int, int] | None = None
         self._is_fullscreen: bool = False
+        # Compute the maximum pixel dimension this viewer will ever need.
+        # Images are downscaled to this during decode, preventing multi-MB
+        # full-resolution buffers from accumulating in cache and on the GPU.
+        self._max_dimension = self._compute_max_dimension()
         self._slideshow = SlideshowController(self)
         self._slideshow.next_requested.connect(self.next_image)
         self._setup_ui()
@@ -56,6 +58,24 @@ class ImageViewer(QWidget):
             self._manager.full_image_ready.connect(self._on_full_image_ready)
             self._manager.load_error.connect(self._on_load_error)
         self.setFocusPolicy(Qt.StrongFocus)
+
+    @staticmethod
+    def _compute_max_dimension() -> int:
+        """Return the largest pixel dimension the display could require.
+        Uses the screen diagonal so images remain crisp even on high-DPI
+        panels, while capping at 3840 to avoid decoding oversized buffers
+        for ultra-wide or multi-monitor setups."""
+        try:
+            screen = QGuiApplication.primaryScreen()
+            if screen:
+                geo = screen.geometry()
+                diag = max(geo.width(), geo.height())
+                # Account for device pixel ratio (HiDPI)
+                dpr = int(screen.devicePixelRatio() + 0.5)
+                return min(max(diag * dpr, 1920), 3840)
+        except Exception:
+            pass
+        return 1920  # safe default
 
     # ─────────────────────────────────────────────────────────────────
     # UI Setup
@@ -185,12 +205,14 @@ class ImageViewer(QWidget):
     def next_image(self):
         if not self._image_list:
             return
+        self._cleanup_old_cache()
         self._current_index = (self._current_index + 1) % len(self._image_list)
         self._display_current()
 
     def prev_image(self):
         if not self._image_list:
             return
+        self._cleanup_old_cache()
         self._current_index = (self._current_index - 1) % len(self._image_list)
         self._display_current()
 
@@ -206,23 +228,25 @@ class ImageViewer(QWidget):
         self._info_panel.set_image(path)
         total = len(self._image_list)
         self._counter_label.setText(f"{self._current_index + 1} / {total}")
-        # Show/hide nav buttons
         has_nav = total > 1
         self._prev_btn.setVisible(has_nav)
         self._next_btn.setVisible(has_nav)
         if self._manager:
-            self._manager.request_full_image(path)
+            self._manager.request_full_image(path, self._max_dimension)
             self._preload_neighbors()
         else:
             self._set_pixmap(QPixmap(path))
 
     def _set_pixmap(self, pixmap: QPixmap):
+        old = self._pixmap_item.pixmap()
+        if not old.isNull():
+            old.detach()
+        self._pixmap_item.setPixmap(pixmap)
         if pixmap.isNull():
             self._scene.setSceneRect(QRectF(0, 0, 1, 1))
-            return
-        self._pixmap_item.setPixmap(pixmap)
-        self._scene.setSceneRect(QRectF(pixmap.rect()))
-        self.fit_to_screen()
+        else:
+            self._scene.setSceneRect(QRectF(pixmap.rect()))
+            self.fit_to_screen()
 
     def _on_full_image_ready(self, path: str, qimage: QImage):
         if path != self._pending_path:
@@ -233,14 +257,28 @@ class ImageViewer(QWidget):
         if path != self._pending_path:
             return
         self._pixmap_item.setPixmap(QPixmap())
-        self._notice_overlay.open("Unable to open image", f"{Path(path).name}\n\n{message}")
+        d = MaterialDialog(self, "Unable to open image", f"{Path(path).name}\n\n{message}")
+        d.add_action("OK", d.close_dialog, is_primary=True)
+        d.open()
 
     def _preload_neighbors(self):
         if not self._manager or len(self._image_list) < 2:
             return
         for offset in range(1, AppConst.PRELOAD_AHEAD + 1):
             idx = (self._current_index + offset) % len(self._image_list)
-            self._manager.request_full_image(self._image_list[idx])
+            self._manager.request_full_image(
+                self._image_list[idx], self._max_dimension
+            )
+
+    def _cleanup_old_cache(self):
+        if not self._manager:
+            return
+        if len(self._image_list) < 4:
+            return
+        cutoff = max(0, self._current_index - AppConst.PRELOAD_AHEAD - 2)
+        cleanup_paths = self._image_list[:cutoff]
+        for path in cleanup_paths:
+            self._manager._cache.remove(f"full:{path}")
 
     # ─────────────────────────────────────────────────────────────────
     # Zoom
@@ -328,15 +366,58 @@ class ImageViewer(QWidget):
         self._crop_bar.show_message("Drag to choose a crop area")
         self._crop_bar.show()
 
-    def _crop_current(self, x: int, y: int, width: int, height: int):
+    def _crop_current(self, x: float, y: float, width: float, height: float):
         if not self._current_path:
             return
         if not self._current_path.lower().endswith(tuple(AppConst.SUPPORTED_FORMATS_PILLOW)):
             self._show_operation_failed("Crop is not supported for this format")
             return
-        self._pending_crop_rect = (x, y, width, height)
+        source_size = image_ops.get_oriented_image_dimensions(self._current_path)
+        if not source_size:
+            self._show_operation_failed("Could not read image dimensions")
+            return
+        crop_rect = self._map_display_crop_to_source(
+            QRectF(float(x), float(y), float(width), float(height)),
+            source_size,
+        )
+        if not crop_rect:
+            self._show_operation_failed("Invalid crop selection")
+            return
+        self._pending_crop_rect = crop_rect
         self._crop_bar.show_message("Review crop selection")
         self._crop_bar.show()
+
+    def _map_display_crop_to_source(
+        self,
+        display_rect: QRectF,
+        source_size: tuple[int, int],
+    ) -> tuple[int, int, int, int] | None:
+        pixmap = self._pixmap_item.pixmap()
+        scene_rect = self._scene.sceneRect()
+        source_width, source_height = source_size
+        if (
+            pixmap.isNull()
+            or source_width <= 0
+            or source_height <= 0
+            or scene_rect.width() <= 0
+            or scene_rect.height() <= 0
+        ):
+            return None
+
+        rect = display_rect.normalized().intersected(scene_rect)
+        if not rect.isValid() or rect.width() <= 0 or rect.height() <= 0:
+            return None
+
+        return image_ops.map_display_crop_to_source(
+            (
+                rect.left() - scene_rect.left(),
+                rect.top() - scene_rect.top(),
+                rect.width(),
+                rect.height(),
+            ),
+            (scene_rect.width(), scene_rect.height()),
+            (source_width, source_height),
+        )
 
     def _apply_crop(self):
         if not self._current_path or not self._pending_crop_rect:
@@ -507,6 +588,10 @@ class ImageViewer(QWidget):
         d.open()
 
     def _go_back(self):
+        # Clear full image cache when leaving viewer
+        if self._manager:
+            for path in self._image_list:
+                self._manager._cache.remove(f"full:{path}")
         if self._slideshow.is_running:
             self._slideshow.stop()
         if self._is_fullscreen:
@@ -654,7 +739,7 @@ class _InfoPanel(QWidget):
 # Custom Graphics View — Zoom + Pan + Crop overlay
 # ─────────────────────────────────────────────────────────────────────
 class _ZoomPanView(QGraphicsView):
-    crop_rect_selected = Signal(int, int, int, int)
+    crop_rect_selected = Signal(float, float, float, float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -955,11 +1040,13 @@ class _ZoomPanView(QGraphicsView):
             self.setCursor(Qt.CrossCursor)
 
     def _emit_crop_rect(self, rect: QRectF):
-        x = int(round(rect.x()))
-        y = int(round(rect.y()))
-        w = int(round(rect.width()))
-        h = int(round(rect.height()))
-        self.crop_rect_selected.emit(x, y, w, h)
+        rect = rect.normalized()
+        self.crop_rect_selected.emit(
+            rect.left(),
+            rect.top(),
+            rect.width(),
+            rect.height(),
+        )
 
     def _clear_crop_handles(self):
         for item in self._crop_handle_items:

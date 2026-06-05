@@ -105,7 +105,7 @@ class AppConst:
     SUPPORTED_FORMATS_PILLOW = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif"}
 
     THUMB_SIZE        = (220, 220)
-    MAX_CACHE_MB      = 512
+    MAX_CACHE_MB      = 64
     PRELOAD_AHEAD     = 3
     SLIDESHOW_DEFAULT_INTERVAL_MS = 4000
 
