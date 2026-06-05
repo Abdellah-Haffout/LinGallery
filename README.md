@@ -49,7 +49,21 @@ git clone https://github.com/SoufianoDev/lingallery.git
 cd lingallery
 ```
 
-### Step 3: Install Dependencies
+### Step 3: Create and Activate Virtual Environment
+
+Create a virtual environment to keep dependencies isolated:
+
+```bash
+python3 -m venv venv
+```
+
+Activate the virtual environment:
+
+```bash
+source venv/bin/activate
+```
+
+### Step 4: Install Dependencies
 
 Run this command in the lingallery folder:
 
@@ -59,7 +73,7 @@ pip install -r requirements.txt
 
 This will install all the libraries LinGallery needs to run.
 
-### Step 4: Run LinGallery
+### Step 5: Run LinGallery
 
 Start the application:
 
