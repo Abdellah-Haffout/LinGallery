@@ -45,7 +45,7 @@ python3 --version
 Clone or download this project to your computer:
 
 ```bash
-git clone https://github.com/yourusername/lingallery.git
+git clone https://github.com/SoufianoDev/lingallery.git
 cd lingallery
 ```
 
