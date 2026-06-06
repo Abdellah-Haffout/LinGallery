@@ -195,7 +195,7 @@ class MainWindow(QMainWindow):
 
     def _on_scan_complete(self, total_albums: int, total_images: int):
         self._status.showMessage(
-            f"Library ready — {total_albums} albums, {total_images} images"
+            f"{total_albums} albums, {total_images} images"
         )
         if self._pending_album_select and self._album_panel.select_path(self._pending_album_select):
             self._pending_album_select = None

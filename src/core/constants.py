@@ -98,8 +98,8 @@ class AppConst:
     THUMB_DIR         = "~/.cache/lingallery/thumbnails"
     DB_PATH           = "~/.cache/lingallery/meta.db"
 
-    # Default scan roots (~/Pictures, ~/Downloads)
-    DEFAULT_SCAN_ROOTS = ["~/Pictures", "~/Downloads"]
+    # Default scan roots (~/Pictures, ~/Downloads, ~/Desktop)
+    DEFAULT_SCAN_ROOTS = ["~/Pictures", "~/Downloads", "~/Desktop"]
 
     SUPPORTED_FORMATS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif", ".svg"}
     SUPPORTED_FORMATS_PILLOW = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif"}
