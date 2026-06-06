@@ -1,10 +1,20 @@
 # LinGallery
 
-A beautiful and lightweight image gallery application for Linux. Organize, browse, and view your photo collection with an intuitive Material Design interface optimized for comfortable viewing.
+[![License: GPL3](https://img.shields.io/badge/License-GPLv3-blue.svg?style=for-the-badge)](https://opensource.org/licenses/GPL-3.0)
+
+A beautiful and lightweight gallery application for Linux. Organize, browse, and view your photo collection with an intuitive Material Design interface optimized for comfortable viewing.
+
+## License
+
+This project is licensed under the **GNU General Public License v3 (GPLv3)** - see the [LICENSE](LICENSE) file for full details.
+
+**Note:** This means you are free to use, modify, and distribute this software under the same license terms. See LICENSE file for complete terms and conditions.
+
+---
 
 ## What is LinGallery?
 
-LinGallery is a fast, user-friendly image viewer and organizer designed for Linux users who want a simple way to browse and manage their photo libraries. Unlike complex image editors, LinGallery focuses on what you really need: finding your photos quickly, viewing them beautifully, and doing basic organization tasks.
+LinGallery is a fast, user-friendly gallery application designed for Linux users who want a simple way to browse and manage their photo libraries. Unlike complex image editors, LinGallery focuses on what you really need: finding your photos quickly, viewing them beautifully, and doing basic organization tasks.
 
 ## Key Features
 
@@ -137,10 +147,6 @@ If you get an error when running `python3 src/main.py`:
 - Check the troubleshooting section above
 - Report issues on GitHub
 - Review existing questions and answers
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## About
 
