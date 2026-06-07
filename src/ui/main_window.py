@@ -38,6 +38,7 @@ class MainWindow(QMainWindow):
         self._indexer: LibraryIndexer | None = None
         self._scan_roots = list(AppConst.DEFAULT_SCAN_ROOTS)
         self._pending_album_select: str | None = None
+        self._is_refresh: bool = False  # Tracks whether current scan is a refresh operation
 
         self._build_ui()
         self._start_scan()
@@ -159,6 +160,8 @@ class MainWindow(QMainWindow):
         
         print("[MainWindow] Starting full library refresh pipeline...")
         # 1 & 2: Flush memory
+        self._is_refresh = True
+        self._gallery_view.set_empty_state("refreshing")
         self._gallery_view.clear()
         self._img_manager.flush_state()
         self._album_panel.clear()
@@ -174,6 +177,12 @@ class MainWindow(QMainWindow):
     def _start_scan(self, select_album: str | None = None):
         if self._indexer and self._indexer.isRunning():
             self._indexer.stop()
+
+        # Update empty-state message based on scan type
+        if self._is_refresh:
+            self._gallery_view.set_empty_state("refreshing")
+        else:
+            self._gallery_view.set_empty_state("scanning")
 
         self._album_panel.clear()
         self._status.showMessage("Scanning for images…")
@@ -194,6 +203,8 @@ class MainWindow(QMainWindow):
         )
 
     def _on_scan_complete(self, total_albums: int, total_images: int):
+        self._is_refresh = False
+        self._gallery_view.set_empty_state("idle")
         self._status.showMessage(
             f"{total_albums} albums, {total_images} images"
         )

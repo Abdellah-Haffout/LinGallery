@@ -19,7 +19,6 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QLabel,
     QListView,
     QStyledItemDelegate,
     QStyle,
@@ -28,6 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.constants import AppConst
+from pymaterial.components.text import Text, TextProps
 from logic.image_manager import ImageManager
 from ui.material_bridge import MaterialQtBridge
 
@@ -185,6 +185,7 @@ class GalleryView(QWidget):
         self._tile_size = 160
         self._model = _ImageGridModel(self)
         self._bridge = MaterialQtBridge.get()
+        self._empty_state: str = "idle"  # "scanning" | "refreshing" | "idle"
         self._setup_ui()
         self._manager.thumbnail_ready.connect(self._on_thumbnail_ready)
         self._model.thumbnails_evicted.connect(self._on_thumbnails_evicted)
@@ -194,10 +195,12 @@ class GalleryView(QWidget):
         layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(0)
 
-        self._empty_label = QLabel("Open a folder or select an album to browse images")
+        self._empty_label = self._bridge.builder.build(
+            Text("gallery_empty_label", TextProps(text="Open a folder or select an album to browse images"))
+        )
         self._empty_label.setAlignment(Qt.AlignCenter)
         self._empty_label.setStyleSheet(
-            f"color: {self._bridge.theme.color_scheme.on_surface_variant}; font-size: 15px;"
+            f"color: {self._bridge.theme.color_scheme.on_surface_variant}; font-size: 15px; background-color: transparent;"
         )
         layout.addWidget(self._empty_label)
 
@@ -264,7 +267,7 @@ class GalleryView(QWidget):
 
         if not images:
             self._view.hide()
-            self._empty_label.show()
+            self._update_empty_label()
             return
 
         self._empty_label.hide()
@@ -279,7 +282,7 @@ class GalleryView(QWidget):
         self._requested_thumbs.discard(path)
         if not self._model.paths():
             self._view.hide()
-            self._empty_label.show()
+            self._update_empty_label()
 
     def clear(self):
         """Flush in-memory state during a refresh."""
@@ -287,6 +290,45 @@ class GalleryView(QWidget):
         self._requested_thumbs.clear()
         self._model.set_paths([])
         self._view.hide()
+        self._update_empty_label()
+
+    def set_empty_state(self, state: str):
+        """
+        Set the empty-state context.
+
+        Args:
+            state: One of "scanning", "refreshing", or "idle".
+        """
+        if state not in ("scanning", "refreshing", "idle"):
+            raise ValueError(f"Invalid empty state: {state}")
+        self._empty_state = state
+        self._update_empty_label()
+
+    def _update_empty_label(self):
+        """
+        Update the empty-state label text based on current application state.
+        """
+        if self._empty_state == "scanning":
+            message = "Scanning..."
+        elif self._empty_state == "refreshing":
+            message = "Refreshing..."
+        else:  # idle
+            message = "Open a folder or select an album to browse images."
+
+        # Rebuild the label with the new message
+        parent = self._empty_label.parent()
+        self._empty_label.deleteLater()
+        self._empty_label = self._bridge.builder.build(
+            Text("gallery_empty_label", TextProps(text=message)),
+            parent
+        )
+        self._empty_label.setAlignment(Qt.AlignCenter)
+        self._empty_label.setStyleSheet(
+            f"color: {self._bridge.theme.color_scheme.on_surface_variant}; font-size: 15px; background-color: transparent;"
+        )
+        # Insert at the same position in the layout
+        layout = self.layout()
+        layout.insertWidget(0, self._empty_label)
         self._empty_label.show()
 
     def refresh_current_folder(self):
