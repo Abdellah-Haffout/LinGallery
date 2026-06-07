@@ -248,10 +248,14 @@ class GalleryView(QWidget):
 
         path = Path(folder_path)
         try:
-            images = sorted(
-                str(f) for f in path.iterdir()
+            # Collect all image files
+            image_files = [
+                f for f in path.iterdir()
                 if f.is_file() and f.suffix.lower() in AppConst.SUPPORTED_FORMATS
-            )
+            ]
+            # Sort by filesystem modification time, newest first
+            image_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+            images = [str(f) for f in image_files]
         except OSError:
             images = []
 
@@ -294,8 +298,8 @@ class GalleryView(QWidget):
     def add_image(self, path: str):
         """
         Insert a newly created image into the model without reloading
-        the entire folder.  Keeps the list sorted alphabetically and
-        requests a thumbnail immediately.
+        the entire folder.  Keeps the list sorted by filesystem mtime
+        (newest first) and requests a thumbnail immediately.
 
         Uses Qt model row insertion so existing thumbnails are preserved
         — only the new image needs to be decoded.
@@ -308,7 +312,8 @@ class GalleryView(QWidget):
 
         paths = self._model.paths()
         paths.append(path)
-        paths.sort()
+        # Sort by filesystem modification time, newest first
+        paths.sort(key=lambda p: Path(p).stat().st_mtime, reverse=True)
         row = paths.index(path)
         self._model.beginInsertRows(QModelIndex(), row, row)
         self._model._paths.insert(row, path)
