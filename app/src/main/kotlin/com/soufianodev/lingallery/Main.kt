@@ -74,6 +74,8 @@ fun main() = application {
     val fileWatcher = FileWatcher(roots = initialScanRoots)
     val galleryIndex = GalleryIndex()
 
+    val windowState = rememberWindowState(width = 1400.dp, height = 900.dp)
+
     Window(
         onCloseRequest = {
             fileWatcher.stop()
@@ -81,10 +83,11 @@ fun main() = application {
             exitApplication()
         },
         title = "LinGallery",
-        state = rememberWindowState(width = 1400.dp, height = 900.dp)
+        state = windowState
     ) {
         LinGalleryApp(
             awtWindow = window,
+            windowState = windowState,
             fileWatcher = fileWatcher,
             galleryIndex = galleryIndex,
             initialScanRoots = initialScanRoots
@@ -95,6 +98,7 @@ fun main() = application {
 @Composable
 fun LinGalleryApp(
     awtWindow: java.awt.Window,
+    windowState: WindowState,
     fileWatcher: FileWatcher,
     galleryIndex: GalleryIndex,
     initialScanRoots: List<Path>
@@ -112,6 +116,7 @@ fun LinGalleryApp(
     var pendingFileOp by remember { mutableStateOf("") }
     var statusMessage by remember { mutableStateOf("Scanning for images\u2026") }
     var isFullscreen by remember { mutableStateOf(false) }
+    var savedWindowBounds by remember { mutableStateOf<java.awt.Rectangle?>(null) }
     val scope = rememberCoroutineScope()
     val focusRequester = remember { FocusRequester() }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -532,13 +537,18 @@ fun LinGalleryApp(
 
     fun toggleFullscreen() {
         isFullscreen = !isFullscreen
-        if (awtWindow is java.awt.Frame) {
-            val frame = awtWindow as java.awt.Frame
-            if (isFullscreen) {
-                frame.extendedState = frame.extendedState or java.awt.Frame.MAXIMIZED_BOTH
-            } else {
-                frame.extendedState = frame.extendedState and java.awt.Frame.MAXIMIZED_BOTH.inv()
+        val frame = awtWindow as? java.awt.Frame ?: return
+        val device = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().defaultScreenDevice
+        if (isFullscreen) {
+            savedWindowBounds = frame.bounds
+            device.fullScreenWindow = frame
+        } else {
+            device.fullScreenWindow = null
+            frame.extendedState = java.awt.Frame.NORMAL
+            savedWindowBounds?.let { bounds ->
+                frame.bounds = bounds
             }
+            savedWindowBounds = null
         }
     }
 
@@ -547,7 +557,9 @@ fun LinGalleryApp(
         if (state.screen !is Screen.Viewer) return false
         return when (event.key) {
             Key.Escape -> {
-                if (state.viewerState.isCropping) {
+                if (isFullscreen) {
+                    toggleFullscreen()
+                } else if (state.viewerState.isCropping) {
                     cropModeTransitioning = false
                     state = state.copy(viewerState = state.viewerState.copy(isCropping = false, cropRect = null))
                 } else {
@@ -676,7 +688,7 @@ fun LinGalleryApp(
         }
     }
 
-    LaunchedEffect(state.screen) {
+    LaunchedEffect(state.screen, isFullscreen) {
         if (state.screen is Screen.Viewer) {
             focusRequester.requestFocus()
         }
@@ -685,7 +697,7 @@ fun LinGalleryApp(
     val anyDialogOpen = showInfoDialog || showDeleteConfirm || showRenameDialog
             || showCropDialog || showFilePicker || showPermanentDeleteWarning
 
-    LaunchedEffect(anyDialogOpen) {
+    LaunchedEffect(anyDialogOpen, isFullscreen) {
         if (state.screen is Screen.Viewer && !anyDialogOpen) {
             focusRequester.requestFocus()
         }
@@ -799,9 +811,12 @@ fun LinGalleryApp(
                 }
                 is Screen.Viewer -> {
             Column(modifier = Modifier.fillMaxSize().background(bg)) {
-                // Viewer top bar — transforms in crop mode
+                // Viewer top bar — stays in tree, hidden via height/alpha during fullscreen
                         Surface(
-                            modifier = Modifier.fillMaxWidth().height(AppConst.TOP_BAR_HEIGHT.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(if (isFullscreen) 0.dp else AppConst.TOP_BAR_HEIGHT.dp)
+                                .graphicsLayer { alpha = if (isFullscreen) 0f else 1f },
                             color = surface
                         ) {
                             AnimatedContent(
@@ -933,7 +948,12 @@ fun LinGalleryApp(
                             }
                         }
 
-                        HorizontalDivider(color = outlineVariant)
+                        HorizontalDivider(
+                            color = outlineVariant,
+                            modifier = Modifier
+                                .height(if (isFullscreen) 0.dp else 1.dp)
+                                .graphicsLayer { alpha = if (isFullscreen) 0f else 1f }
+                        )
 
                         // Image viewer content area — single stable composable, nav columns overlaid
                         Box(modifier = Modifier.weight(1f).fillMaxWidth().graphicsLayer { clip = true }) {
@@ -983,13 +1003,36 @@ fun LinGalleryApp(
                                     state = state.copy(viewerState = state.viewerState.copy(scale = 1f))
                                 }
                             )
+
+                            if (isFullscreen) {
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(8.dp)
+                                        .size(40.dp)
+                                        .stablePointerHoverIcon(PointerIcon.Hand)
+                                        .clickable { toggleFullscreen() },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = AppIcons.FullscreenExit,
+                                        contentDescription = "Exit Fullscreen (Esc)",
+                                        tint = onSurface
+                                    )
+                                }
+                            }
                         }
 
-                        HorizontalDivider(color = outlineVariant)
+                        HorizontalDivider(
+                            color = outlineVariant,
+                            modifier = Modifier
+                                .height(if (isFullscreen) 0.dp else 1.dp)
+                                .graphicsLayer { alpha = if (isFullscreen) 0f else 1f }
+                        )
 
                         // Bottom edit toolbar — hidden during crop mode
                         AnimatedVisibility(
-                            visible = !state.viewerState.isCropping,
+                            visible = !state.viewerState.isCropping && !isFullscreen,
                             enter = fadeIn(tween(280, easing = FastOutSlowInEasing)) +
                                     slideInVertically(tween(280, easing = FastOutSlowInEasing)) { it },
                             exit = fadeOut(tween(280, easing = FastOutSlowInEasing)) +
