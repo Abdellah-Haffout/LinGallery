@@ -1,0 +1,300 @@
+package com.soufianodev.lingallery.data
+
+import com.soufianodev.lingallery.theme.AppConst
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file.attribute.FileTime
+import kotlin.io.path.extension
+
+internal fun normalizePath(path: Path): Path =
+    try { path.toRealPath() } catch (_: Exception) { path.toAbsolutePath().normalize() }
+
+sealed class Screen {
+    data object Gallery : Screen()
+    data class Viewer(val imageIndex: Int) : Screen()
+}
+
+data class ViewerState(
+    val currentIndex: Int = 0,
+    val scale: Float = 1f,
+    val panX: Float = 0f,
+    val panY: Float = 0f,
+    val isCropping: Boolean = false,
+    val cropRect: CropRect? = null
+)
+
+data class CropRect(
+    val x: Float,
+    val y: Float,
+    val width: Float,
+    val height: Float
+) {
+    fun isValid(): Boolean = width > 0f && height > 0f
+}
+
+data class DeletionRecord(
+    val trashPath: Path,
+    val imageFile: ImageFile,
+    val albumPath: Path,
+    val albumIndex: Int,
+    val imageIndex: Int
+)
+
+data class GalleryState(
+    val albums: List<Album> = emptyList(),
+    val currentAlbumIndex: Int = 0,
+    val searchQuery: String = "",
+    val isScanning: Boolean = false,
+    val scannedDirs: Int = 0,
+    val totalImagesScanned: Int = 0,
+    val screen: Screen = Screen.Gallery,
+    val viewerState: ViewerState = ViewerState(),
+    val isSlideshowActive: Boolean = false,
+    val isDarkTheme: Boolean = true,
+    val deletionRecord: DeletionRecord? = null,
+) {
+    val currentAlbum: Album?
+        get() = albums.getOrNull(currentAlbumIndex)
+
+    val currentAlbumImages: List<ImageFile>
+        get() = currentAlbum?.images ?: emptyList()
+
+    val currentImage: ImageFile?
+        get() = currentAlbumImages.getOrNull(viewerState.currentIndex)
+
+    // ── Sorting Helpers ───────────────────────────────────────────
+
+    private val PRIORITY_NAMES = listOf("desktop", "camera", "pictures", "downloads", "screenshots")
+
+    private fun sortKey(name: String): Pair<Int, String> {
+        val idx = PRIORITY_NAMES.indexOf(name.lowercase())
+        return if (idx >= 0) Pair(idx, "") else Pair(PRIORITY_NAMES.size, name.lowercase())
+    }
+
+    private fun albumCompare(a: Album, b: Album): Int {
+        val (pa, sa) = sortKey(a.name)
+        val (pb, sb) = sortKey(b.name)
+        return pa.compareTo(pb).let { if (it != 0) it else sa.compareTo(sb) }
+    }
+
+    fun sortAlbums(): GalleryState {
+        val selectedPath = currentAlbum?.path
+        val sorted = albums.sortedWith(Comparator(::albumCompare))
+        val newIndex = if (selectedPath != null) {
+            sorted.indexOfFirst { it.path == selectedPath }.coerceAtLeast(0)
+        } else {
+            sorted.indexOfFirst { it.name.equals("Pictures", ignoreCase = true) }.coerceAtLeast(0)
+        }
+        return copy(albums = sorted, currentAlbumIndex = newIndex)
+    }
+
+    fun pruneEmptyAlbums(): GalleryState {
+        val nonEmpty = albums.filter { it.images.isNotEmpty() }
+        if (nonEmpty.size == albums.size) return this
+        val newIndex = currentAlbumIndex.coerceIn(0, nonEmpty.size - 1)
+        return copy(albums = nonEmpty, currentAlbumIndex = newIndex)
+    }
+
+    fun syncAlbum(albumPath: Path): GalleryState {
+        val fresh = scanSingleDir(albumPath)
+        if (fresh == null) return removeAlbum(albumPath)
+        return addAlbum(fresh)
+    }
+
+    // ── Incremental Update Helpers ─────────────────────────────────
+
+    fun addImage(albumPath: Path, image: ImageFile): GalleryState {
+        val normalizedAlbum = normalizePath(albumPath)
+        val albumIdx = albums.indexOfFirst { normalizePath(it.path) == normalizedAlbum }
+        if (albumIdx < 0) {
+            val dirAlbum = scanSingleDir(albumPath)
+                ?: Album(normalizedAlbum, albumPath.fileName.toString(), listOf(image), image.path)
+            return addAlbum(dirAlbum)
+        }
+        val album = albums[albumIdx]
+        val normalizedImagePath = normalizePath(image.path)
+        val existingIdx = album.images.indexOfFirst { normalizePath(it.path) == normalizedImagePath }
+        val newImages = if (existingIdx >= 0) {
+            album.images.toMutableList().also { it[existingIdx] = image }
+        } else {
+            (album.images + image)
+                .distinctBy { normalizePath(it.path) }
+                .sortedByDescending { it.lastModified }
+        }
+        val newPreview = newImages.first().path
+        val newAlbums = albums.toMutableList()
+        newAlbums[albumIdx] = album.copy(images = newImages, previewPath = newPreview)
+        return copy(albums = newAlbums)
+    }
+
+    fun removeImage(albumPath: Path, imagePath: Path): GalleryState {
+        val normalizedAlbum = normalizePath(albumPath)
+        val albumIdx = albums.indexOfFirst { normalizePath(it.path) == normalizedAlbum }
+        if (albumIdx < 0) return this
+        val album = albums[albumIdx]
+        val normalizedImage = normalizePath(imagePath)
+        var imgIdx = album.images.indexOfFirst { normalizePath(it.path) == normalizedImage }
+        if (imgIdx < 0) {
+            val absPath = imagePath.toAbsolutePath().normalize().toString()
+            imgIdx = album.images.indexOfFirst {
+                it.path.toAbsolutePath().normalize().toString() == absPath
+            }
+        }
+        if (imgIdx < 0) {
+            val reScanned = scanSingleDir(albumPath)
+            if (reScanned == null) return removeAlbum(normalizedAlbum)
+            val newAlbums = albums.toMutableList()
+            newAlbums[albumIdx] = reScanned
+            return copy(albums = newAlbums)
+        }
+
+        val newImages = album.images.toMutableList()
+        newImages.removeAt(imgIdx)
+
+        if (newImages.isEmpty()) {
+            return removeAlbum(normalizedAlbum)
+        }
+
+        val newPreview = newImages.first().path
+        val newAlbums = albums.toMutableList()
+        newAlbums[albumIdx] = album.copy(images = newImages, previewPath = newPreview)
+
+        val newScreen = if (screen is Screen.Viewer && albumIdx == currentAlbumIndex) {
+            val viewerIdx = (screen as Screen.Viewer).imageIndex
+            val adjustedIdx = when {
+                viewerIdx < imgIdx -> viewerIdx
+                viewerIdx > imgIdx -> (viewerIdx - 1).coerceAtLeast(0)
+                else -> viewerIdx.coerceAtMost(newImages.size - 1)
+            }
+            Screen.Viewer(adjustedIdx)
+        } else screen
+
+        return copy(
+            albums = newAlbums,
+            screen = newScreen,
+        )
+    }
+
+    fun addAlbum(album: Album): GalleryState {
+        val dedupAlbum = if (album.images.size != album.images.distinctBy { normalizePath(it.path) }.size) {
+            val deduped = album.images.distinctBy { normalizePath(it.path) }
+            album.copy(images = deduped, previewPath = deduped.firstOrNull()?.path ?: album.previewPath)
+        } else album
+        val normalizedAlbum = normalizePath(dedupAlbum.path)
+        if (albums.any { normalizePath(it.path) == normalizedAlbum }) {
+            val idx = albums.indexOfFirst { normalizePath(it.path) == normalizedAlbum }
+            val existing = albums[idx]
+            if (existing.images.size != dedupAlbum.images.size || existing.name != dedupAlbum.name) {
+                val newAlbums = albums.toMutableList()
+                newAlbums[idx] = dedupAlbum
+                return copy(albums = newAlbums)
+            }
+            return this
+        }
+        val insertionIndex = albums.indexOfFirst { albumCompare(dedupAlbum, it) < 0 }
+            .let { if (it < 0) albums.size else it }
+        val newAlbums = albums.toMutableList()
+        newAlbums.add(insertionIndex, dedupAlbum)
+        val newIndex = if (currentAlbumIndex >= insertionIndex) currentAlbumIndex + 1 else currentAlbumIndex
+        return copy(albums = newAlbums, currentAlbumIndex = newIndex)
+    }
+
+    fun removeAlbum(albumPath: Path): GalleryState {
+        val normalized = normalizePath(albumPath)
+        val idx = albums.indexOfFirst { normalizePath(it.path) == normalized }
+        if (idx < 0) return this
+        val newAlbums = albums.toMutableList()
+        newAlbums.removeAt(idx)
+
+        val newIndex = when {
+            newAlbums.isEmpty() -> 0
+            currentAlbumIndex == idx -> 0.coerceAtMost(newAlbums.size - 1)
+            currentAlbumIndex > idx -> currentAlbumIndex - 1
+            else -> currentAlbumIndex
+        }
+
+        val newScreen = if (screen is Screen.Viewer && currentAlbumIndex == idx) {
+            Screen.Gallery
+        } else screen
+
+        return copy(
+            albums = newAlbums,
+            currentAlbumIndex = newIndex,
+            screen = newScreen
+        )
+    }
+
+    fun modifyImage(albumPath: Path, imagePath: Path, updatedImage: ImageFile): GalleryState {
+        val normalizedAlbum = normalizePath(albumPath)
+        val albumIdx = albums.indexOfFirst { normalizePath(it.path) == normalizedAlbum }
+        if (albumIdx < 0) return this
+        val album = albums[albumIdx]
+        val normalizedImage = normalizePath(imagePath)
+        val imgIdx = album.images.indexOfFirst { normalizePath(it.path) == normalizedImage }
+        if (imgIdx < 0) return this
+
+        val newImages = album.images.toMutableList()
+        newImages[imgIdx] = updatedImage
+        val newAlbums = albums.toMutableList()
+        newAlbums[albumIdx] = album.copy(images = newImages)
+        return copy(albums = newAlbums)
+    }
+
+    fun renameAlbum(oldPath: Path, newPath: Path): GalleryState {
+        val newAlbum = scanSingleDir(newPath)
+        return if (newAlbum != null) removeAlbum(oldPath).addAlbum(newAlbum) else removeAlbum(oldPath)
+    }
+}
+
+fun readImageFileInfo(path: Path): ImageFile? {
+    return try {
+        val name = path.fileName.toString()
+        val attrs = Files.readAttributes(path, BasicFileAttributes::class.java)
+        val ext = path.extension
+        ImageFile(
+            path = path,
+            name = name,
+            extension = if (ext.startsWith(".")) ext else ".$ext",
+            size = attrs.size(),
+            lastModified = attrs.lastModifiedTime().toMillis()
+        )
+    } catch (_: Exception) { null }
+}
+
+fun scanSingleDir(dir: Path): Album? {
+    if (!Files.isDirectory(dir)) return null
+    val images = mutableListOf<ImageFile>()
+    try {
+        Files.list(dir).forEach { path ->
+            if (!Files.isDirectory(path)) {
+                val name = path.fileName.toString()
+                val dot = name.lastIndexOf('.')
+                val ext = if (dot >= 0) name.substring(dot).lowercase() else ""
+                if (ext in AppConst.SUPPORTED_FORMATS) {
+                    try {
+                        val size = Files.size(path)
+                        val mtime = Files.getLastModifiedTime(path)
+                        images.add(
+                            ImageFile(
+                                path = path,
+                                name = name,
+                                extension = ext,
+                                size = size,
+                                lastModified = mtime.toMillis()
+                            )
+                        )
+                    } catch (_: Exception) { }
+                }
+            }
+        }
+    } catch (_: Exception) { return null }
+    val sortedImages = images.distinctBy { it.path }.sortedByDescending { it.lastModified }
+    if (sortedImages.isEmpty()) return null
+    return Album(
+        path = dir,
+        name = dir.fileName.toString(),
+        images = sortedImages,
+        previewPath = sortedImages.first().path
+    )
+}

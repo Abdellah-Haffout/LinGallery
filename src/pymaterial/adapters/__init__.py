@@ -1,3 +1,0 @@
-"""
-Backend Adapters for pymaterialkit
-"""
