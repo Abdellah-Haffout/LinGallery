@@ -41,7 +41,7 @@ LinGallery is a program that runs on your Linux desktop. It looks through your P
 
 ## How to use it
 
-Double-click a thumbnail to open an image. Use arrow keys (or A/D) to navigate. Scroll to zoom. The bottom toolbar has buttons for all editing operations.
+Double-click a thumbnail to open an image. Use arrow keys (or A/D) to navigate. Scroll to zoom. The top toolbar has zoom controls (-, 100%, +) -- click the percentage to reset to fit-to-screen. The bottom toolbar has buttons for all editing operations.
 
 **Keyboard shortcuts**
 

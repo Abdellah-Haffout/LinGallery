@@ -886,19 +886,30 @@ fun LinGalleryApp(
                                             tint = onSurface,
                                             preferTooltipAbove = false
                                         )
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = MaterialTheme.colorScheme.surfaceVariant,
+                                            tonalElevation = 0.dp
+                                        ) {
+                                            val zoomPercentage = ((state.viewerState.scale * 100).toInt()).coerceIn(1, 9999)
+                                            val zoomLabel = if (zoomPercentage >= 1000) "${zoomPercentage / 100}.${(zoomPercentage % 100) / 10}K" else "$zoomPercentage%"
+                                            Text(
+                                                text = zoomLabel,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier
+                                                    .widthIn(min = 46.dp)
+                                                    .clickable {
+                                                        state = state.copy(viewerState = state.viewerState.copy(scale = 1f, panX = 0f, panY = 0f))
+                                                    }
+                                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                            )
+                                        }
                                         TooltipIconButton(
                                             icon = AppIcons.ZoomIn,
                                             tooltip = "Zoom in (+)",
                                             onClick = ::zoomIn,
-                                            tint = onSurface,
-                                            preferTooltipAbove = false
-                                        )
-                                        TooltipIconButton(
-                                            icon = AppIcons.Fullscreen,
-                                            tooltip = "Fit to screen (F2)",
-                                            onClick = {
-                                                state = state.copy(viewerState = state.viewerState.copy(scale = 1f, panX = 0f, panY = 0f))
-                                            },
                                             tint = onSurface,
                                             preferTooltipAbove = false
                                         )
