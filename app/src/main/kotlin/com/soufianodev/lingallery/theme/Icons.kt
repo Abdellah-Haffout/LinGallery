@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RotateLeft
 import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -58,4 +59,5 @@ object AppIcons {
     val GridView = Icons.Filled.GridView
     val Refresh = Icons.Filled.Refresh
     val Transfer = Icons.AutoMirrored.Filled.DriveFileMove
+    val Warning = Icons.Filled.Warning
 }

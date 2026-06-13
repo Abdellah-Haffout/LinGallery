@@ -1188,7 +1188,14 @@ fun LinGalleryApp(
                     },
                     title = { Text("Delete image") },
                     text = {
-                        Column {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Icon(
+                                imageVector = AppIcons.Delete,
+                                contentDescription = "Delete",
+                                modifier = Modifier.size(64.dp).align(Alignment.CenterHorizontally),
+                                tint = DarkPalette.ERROR
+                            )
+                            Spacer(Modifier.height(16.dp))
                             Text("Delete ${state.currentImage?.name ?: ""}?")
                             Spacer(Modifier.height(8.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1219,7 +1226,16 @@ fun LinGalleryApp(
                     onDismissRequest = { showPermanentDeleteWarning = false },
                     title = { Text("Permanently delete image") },
                     text = {
-                        Text("You're about to permanently delete ${state.currentImage?.name ?: ""}.\n\nThis action cannot be undone and the file will not be moved to Trash.")
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Icon(
+                                imageVector = AppIcons.Warning,
+                                contentDescription = "Warning",
+                                modifier = Modifier.size(64.dp).align(Alignment.CenterHorizontally),
+                                tint = DarkPalette.ERROR
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            Text("You're about to permanently delete ${state.currentImage?.name ?: ""}.\n\nThis action cannot be undone and the file will not be moved to Trash.")
+                        }
                     },
                     confirmButton = {
                         Button(onClick = ::confirmPermanentDelete, colors = ButtonDefaults.buttonColors(containerColor = DarkPalette.ERROR)) {
