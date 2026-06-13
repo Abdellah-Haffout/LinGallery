@@ -75,7 +75,7 @@ fun GalleryView(
             ) {
                 itemsIndexed(
                     images,
-                    key = { _, img -> img.path.toString() },
+                    key = { _, img -> "${img.path}_${img.lastModified}" },
                     contentType = { _, _ -> "thumbnail" }
                 ) { index, image ->
                     Box(
@@ -92,7 +92,7 @@ fun GalleryView(
                                 .clickable { onImageClicked(index) }
                         ) {
                             AsyncImage(
-                                request = ComposableImageRequest(image.path.toUri().toString()) {
+                                request = ComposableImageRequest(image.path.toUri().toString() + "?t=${image.lastModified}") {
                                     crossfade()
                                 },
                                 contentDescription = image.name,
