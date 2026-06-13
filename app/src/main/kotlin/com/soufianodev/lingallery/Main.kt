@@ -1040,7 +1040,7 @@ fun LinGalleryApp(
                         ) {
                             EditToolbar(
                                 isEditableFormat = state.currentImage?.let {
-                                    ".${it.extension}" in AppConst.EDITABLE_FORMATS
+                                    it.extension in AppConst.EDITABLE_FORMATS
                                 } ?: false,
                                 onRotateLeft = ::rotateLeft,
                                 onRotateRight = ::rotateRight,

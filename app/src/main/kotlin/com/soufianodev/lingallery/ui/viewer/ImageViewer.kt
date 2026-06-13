@@ -80,7 +80,7 @@ fun ImageViewer(
             loadError = false
             withContext(Dispatchers.IO) {
                 try {
-                    val uri = path.toUri().toString()
+                    val uri = path.toUri().toString() + "?t=$imageLastModified"
                     val result = SingletonSketch.get(PlatformContext.INSTANCE).execute(
                         ImageRequest.Builder(PlatformContext.INSTANCE, uri).build()
                     )

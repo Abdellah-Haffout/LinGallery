@@ -86,7 +86,8 @@ fun TooltipIconButton(
                 .stablePointerHoverIcon(PointerIcon.Hand),
             interactionSource = interactionSource
         ) {
-            Icon(imageVector = icon, contentDescription = tooltip, tint = tint)
+            val iconTint = if (enabled) tint else tint.copy(alpha = 0.38f)
+            Icon(imageVector = icon, contentDescription = tooltip, tint = iconTint)
         }
 
         if (tooltipState == TooltipDisplayState.SHOWN) {

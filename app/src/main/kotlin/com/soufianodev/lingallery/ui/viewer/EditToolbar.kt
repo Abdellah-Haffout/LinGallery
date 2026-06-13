@@ -55,13 +55,13 @@ fun EditToolbar(
         ) {
             Spacer(Modifier.weight(1f))
 
-            TooltipIconButton(icon = AppIcons.RotateLeft, tooltip = "Rotate Left (L)", onClick = onRotateLeft, tint = onSurface)
-            TooltipIconButton(icon = AppIcons.RotateRight, tooltip = "Rotate Right (R)", onClick = onRotateRight, tint = onSurface)
-            TooltipIconButton(icon = AppIcons.Flip, tooltip = "Flip Horizontal", onClick = onFlipH, tint = onSurface)
+            TooltipIconButton(icon = AppIcons.RotateLeft, tooltip = "Rotate Left (L)", onClick = onRotateLeft, tint = onSurface, enabled = isEditableFormat)
+            TooltipIconButton(icon = AppIcons.RotateRight, tooltip = "Rotate Right (R)", onClick = onRotateRight, tint = onSurface, enabled = isEditableFormat)
+            TooltipIconButton(icon = AppIcons.Flip, tooltip = "Flip Horizontal", onClick = onFlipH, tint = onSurface, enabled = isEditableFormat)
 
             Spacer(Modifier.width(16.dp))
 
-            TooltipIconButton(icon = AppIcons.Crop, tooltip = "Crop (C)", onClick = onCrop, tint = onSurface)
+            TooltipIconButton(icon = AppIcons.Crop, tooltip = "Crop (C)", onClick = onCrop, tint = onSurface, enabled = isEditableFormat)
 
             Spacer(Modifier.width(24.dp))
 

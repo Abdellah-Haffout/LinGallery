@@ -50,7 +50,6 @@ object ImageEditor {
             val dest = destPath ?: path
             val writer = writerForExtension(dest) ?: return false
             cropped.output(writer, dest.toFile())
-            stripExifOrientation(dest)
             true
         } catch (_: Exception) { false }
     }
@@ -62,7 +61,6 @@ object ImageEditor {
                 .rotate(Degrees(degrees))
             val writer = writerForExtension(path) ?: return false
             img.output(writer, path.toFile())
-            stripExifOrientation(path)
             true
         } catch (_: Exception) { false }
     }
@@ -74,7 +72,6 @@ object ImageEditor {
                 .flipX()
             val writer = writerForExtension(path) ?: return false
             img.output(writer, path.toFile())
-            stripExifOrientation(path)
             true
         } catch (_: Exception) { false }
     }
@@ -190,9 +187,9 @@ object ImageEditor {
     }
 
     /**
-     * Reads the EXIF orientation from the file and applies it to the image,
-     * baking the orientation into the pixel data. After this, [stripExifOrientation]
-     * must be called on the saved file to prevent double-application on subsequent loads.
+     * Reads the EXIF orientation from the file and bakes it into the pixel data.
+     * Scrimage writers already produce clean output without EXIF orientation tags,
+     * so no post-processing is needed to prevent double-application.
      */
     private fun ImmutableImage.applyExifOrientation(path: Path): ImmutableImage {
         return try {
@@ -204,30 +201,14 @@ object ImageEditor {
                 2 -> this.flipX()
                 3 -> this.rotate(Degrees(180))
                 4 -> this.flipY()
-                5 -> this.flipX().rotate(Degrees(90))
+                5 -> this.rotate(Degrees(90)).flipX()
                 6 -> this.rotate(Degrees(90))
-                7 -> this.flipX().rotate(Degrees(-90))
+                7 -> this.rotate(Degrees(-90)).flipX()
                 8 -> this.rotate(Degrees(-90))
                 else -> this
             }
         } catch (_: Exception) { this }
     }
 
-    /**
-     * Strips the EXIF orientation tag from the saved file to prevent
-     * viewers (e.g. Sketch) from double-applying orientation after
-     * it has already been baked into the pixel data by [applyExifOrientation].
-     *
-     * Only affects JPEG files, as other formats (PNG, WebP, BMP, TIFF)
-     * do not carry EXIF orientation in a way that affects display.
-     */
-    private fun stripExifOrientation(path: Path) {
-        try {
-            val ext = path.fileName.toString().substringAfterLast('.', "").lowercase()
-            if (ext != "jpg" && ext != "jpeg") return
-            val file = path.toFile()
-            val img = ImageIO.read(file) ?: return
-            ImageIO.write(img, "JPEG", file)
-        } catch (_: Exception) { }
-    }
+
 }
