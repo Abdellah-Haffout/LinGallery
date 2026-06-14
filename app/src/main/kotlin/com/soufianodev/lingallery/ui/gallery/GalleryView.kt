@@ -16,6 +16,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.hoverable
 import androidx.compose.ui.input.pointer.PointerIcon
 import com.soufianodev.lingallery.ui.components.stablePointerHoverIcon
 import androidx.compose.ui.layout.ContentScale
@@ -36,16 +48,13 @@ fun GalleryView(
     hasAlbums: Boolean = true,
     modifier: Modifier = Modifier
 ) {
-    val surfaceContainer = if (isDark) DarkPalette.SURFACE_CONTAINER else LightPalette.SURFACE_CONTAINER
-    val onSurfaceVariant = if (isDark) DarkPalette.ON_SURFACE_VARIANT else LightPalette.ON_SURFACE_VARIANT
-
     val scrollbarStyle = ScrollbarStyle(
         minimalHeight = 24.dp,
         thickness = 6.dp,
         shape = RoundedCornerShape(3.dp),
         hoverDurationMillis = 100,
-        unhoverColor = onSurfaceVariant.copy(alpha = 0.2f),
-        hoverColor = onSurfaceVariant.copy(alpha = 0.5f)
+        unhoverColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
+        hoverColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
     )
 
     val gridState = rememberLazyGridState()
@@ -58,8 +67,8 @@ fun GalleryView(
             Text(
                 text = if (hasAlbums) "Open a folder or select an album to browse images."
                        else "No albums found. Add a source folder to get started.",
-                fontSize = 15.sp,
-                color = onSurfaceVariant
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     } else {
@@ -78,19 +87,28 @@ fun GalleryView(
                     key = { _, img -> "${img.path}_${img.lastModified}" },
                     contentType = { _, _ -> "thumbnail" }
                 ) { index, image ->
-                    Box(
+                    val interactionSource = remember { MutableInteractionSource() }
+                    val isHovered by interactionSource.collectIsHoveredAsState()
+                    val scale by animateFloatAsState(targetValue = if (isHovered) 1.05f else 1f, label = "hover_scale")
+                    val elevation by animateDpAsState(targetValue = if (isHovered) 8.dp else 2.dp, label = "hover_elevation")
+
+                    ElevatedCard(
                         modifier = Modifier
                             .aspectRatio(1f)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(surfaceContainer.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
-                            .stablePointerHoverIcon(PointerIcon.Hand)
+                            .graphicsLayer {
+                                scaleX = scale
+                                scaleY = scale
+                            }
+                            .hoverable(interactionSource)
+                            .clickable { onImageClicked(index) }
+                            .stablePointerHoverIcon(PointerIcon.Hand),
+                        shape = RoundedCornerShape(16.dp),
+                        elevation = CardDefaults.elevatedCardElevation(defaultElevation = elevation),
+                        colors = CardDefaults.elevatedCardColors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        )
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(4.dp)
-                                .clickable { onImageClicked(index) }
-                        ) {
+                        Box(modifier = Modifier.fillMaxSize()) {
                             AsyncImage(
                                 request = ComposableImageRequest(image.path.toUri().toString() + "?t=${image.lastModified}") {
                                     crossfade()
@@ -98,9 +116,40 @@ fun GalleryView(
                                 contentDescription = image.name,
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .clip(RoundedCornerShape(6.dp)),
+                                    .padding(6.dp)
+                                    .clip(RoundedCornerShape(10.dp)),
                                 contentScale = ContentScale.Crop
                             )
+                            
+                            androidx.compose.animation.AnimatedVisibility(
+                                visible = isHovered,
+                                enter = fadeIn(),
+                                exit = fadeOut(),
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 6.dp, vertical = 6.dp)
+                                    .clip(RoundedCornerShape(bottomStart = 10.dp, bottomEnd = 10.dp))
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(
+                                            Brush.verticalGradient(
+                                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f))
+                                            )
+                                        )
+                                        .padding(8.dp)
+                                ) {
+                                    Text(
+                                        text = image.name,
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
                         }
                     }
                 }

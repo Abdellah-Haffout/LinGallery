@@ -1,11 +1,15 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package com.soufianodev.lingallery
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.*
@@ -25,6 +29,11 @@ import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.*
@@ -101,6 +110,76 @@ fun main() = application {
 }
 
 @Composable
+fun Breadcrumbs(
+    path: Path?,
+    onSegmentClick: (Path) -> Unit,
+    modifier: Modifier = Modifier,
+    isDark: Boolean = false
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(
+            onClick = {
+                val homePath = Paths.get(System.getProperty("user.home"))
+                onSegmentClick(homePath)
+            },
+            modifier = Modifier.size(28.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Home,
+                contentDescription = "Home",
+                tint = if (isDark) Color(0xFF2DD4BF) else MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+
+        if (path != null) {
+            val absPath = path.toAbsolutePath().normalize()
+            val parts = mutableListOf<Path>()
+            var current: Path? = absPath
+            while (current != null) {
+                parts.add(0, current)
+                current = current.parent
+            }
+
+            parts.forEachIndexed { index, part ->
+                val segmentName = if (part.fileName == null) {
+                    part.toString().trimEnd('/', '\\')
+                } else {
+                    part.fileName.toString()
+                }
+
+                if (segmentName.isNotEmpty()) {
+                    Text(
+                        text = ">",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isDark) Color.White.copy(alpha = 0.4f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    )
+
+                    val isLast = index == parts.size - 1
+                    Text(
+                        text = segmentName,
+                        style = if (isLast) MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold) else MaterialTheme.typography.bodyMedium,
+                        color = if (isLast) {
+                            if (isDark) Color(0xFF2DD4BF) else MaterialTheme.colorScheme.primary
+                        } else {
+                            if (isDark) Color.White.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .clickable { onSegmentClick(part) }
+                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun LinGalleryApp(
     awtWindow: java.awt.Window,
     windowState: WindowState,
@@ -133,7 +212,29 @@ fun LinGalleryApp(
     var snackbarTitle by remember { mutableStateOf("") }
     var snackbarDetails by remember { mutableStateOf("") }
     var cropModeTransitioning by remember { mutableStateOf(false) }
-    val isDark = true
+    var isDark by remember { mutableStateOf(true) }
+    var isDynamicColor by remember { mutableStateOf(false) }
+    var userSeedColor by remember { mutableStateOf(Color(0xFF4FC3C3)) }
+    var dynamicSeedColor by remember { mutableStateOf<Color?>(null) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(state.currentImage, state.currentAlbumIndex, isDynamicColor) {
+        if (isDynamicColor) {
+            val path = state.currentImage?.path ?: state.currentAlbum?.previewPath
+            if (path != null) {
+                withContext(Dispatchers.IO) {
+                    val color = extractDominantColor(path.toFile())
+                    withContext(Dispatchers.Main) {
+                        dynamicSeedColor = color
+                    }
+                }
+            } else {
+                dynamicSeedColor = null
+            }
+        } else {
+            dynamicSeedColor = null
+        }
+    }
 
     fun showSnackbar(msg: String) {
         snackbarTitle = ""
@@ -717,18 +818,17 @@ fun LinGalleryApp(
         }
     }
 
-    LinGalleryTheme(darkTheme = isDark) {
-        val bg = if (isDark) DarkPalette.BACKGROUND else LightPalette.BACKGROUND
-        val surface = if (isDark) DarkPalette.SURFACE else LightPalette.SURFACE
-        val onSurface = if (isDark) DarkPalette.ON_SURFACE else LightPalette.ON_SURFACE
-        val onSurfaceVariant = if (isDark) DarkPalette.ON_SURFACE_VARIANT else LightPalette.ON_SURFACE_VARIANT
-        val primary = if (isDark) DarkPalette.PRIMARY else LightPalette.PRIMARY
-        val outlineVariant = if (isDark) DarkPalette.OUTLINE_VARIANT else LightPalette.OUTLINE_VARIANT
+    val activeSeedColor = if (isDynamicColor && dynamicSeedColor != null) {
+        dynamicSeedColor!!
+    } else {
+        userSeedColor
+    }
 
+    LinGalleryTheme(darkTheme = isDark, seedColor = activeSeedColor) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(bg)
+                .background(MaterialTheme.colorScheme.background)
                 .focusTarget()
                 .focusRequester(focusRequester)
                 .onKeyEvent(::handleKeyEvent)
@@ -743,64 +843,169 @@ fun LinGalleryApp(
                                 onAlbumSelected = { index ->
                                     state = state.copy(currentAlbumIndex = index)
                                 },
+                                onAddAlbumClicked = {
+                                    pendingFileOp = "add_album"
+                                    showFilePicker = true
+                                },
+                                onMockItemClicked = { category ->
+                                    showSnackbar("$category is currently empty")
+                                },
                                 isDark = isDark
                             )
 
-                            Box(
-                                modifier = Modifier
-                                    .width(1.dp)
-                                    .fillMaxHeight()
-                                    .background(outlineVariant)
-                            )
+                            Scaffold(
+                                modifier = Modifier.weight(1f).fillMaxHeight(),
+                                contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
+                                topBar = {
+                                    TopAppBar(
+                                        windowInsets = androidx.compose.foundation.layout.WindowInsets(0),
+                                        title = {
+                                            Breadcrumbs(
+                                                path = state.currentAlbum?.path,
+                                                onSegmentClick = { part ->
+                                                    val idx = state.albums.indexOfFirst { it.path.toAbsolutePath().normalize() == part.toAbsolutePath().normalize() }
+                                                    if (idx >= 0) {
+                                                        state = state.copy(currentAlbumIndex = idx)
+                                                    } else {
+                                                        scope.launch {
+                                                            val album = withContext(Dispatchers.IO) { scanSingleDir(part) }
+                                                            if (album != null) {
+                                                                state = state.addAlbum(album)
+                                                                val newIdx = state.albums.indexOfFirst { it.path.toAbsolutePath().normalize() == part.toAbsolutePath().normalize() }
+                                                                if (newIdx >= 0) {
+                                                                    state = state.copy(currentAlbumIndex = newIdx)
+                                                                }
+                                                            } else {
+                                                                showSnackbar("No images in folder: ${part.fileName}")
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            )
+                                        },
+                                        actions = {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                var searchQueryText by remember(state.searchQuery) { mutableStateOf(state.searchQuery) }
+                                                TextField(
+                                                    value = searchQueryText,
+                                                    onValueChange = {
+                                                        searchQueryText = it
+                                                        state = state.copy(searchQuery = it)
+                                                    },
+                                                    placeholder = { Text("Search", style = MaterialTheme.typography.bodyMedium) },
+                                                    leadingIcon = {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Search,
+                                                            contentDescription = "Search",
+                                                            modifier = Modifier.size(18.dp)
+                                                        )
+                                                    },
+                                                    singleLine = true,
+                                                    colors = TextFieldDefaults.colors(
+                                                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                                        focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        focusedIndicatorColor = Color.Transparent,
+                                                        unfocusedIndicatorColor = Color.Transparent,
+                                                        disabledIndicatorColor = Color.Transparent,
+                                                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
+                                                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                                    ),
+                                                    shape = RoundedCornerShape(100.dp),
+                                                    modifier = Modifier
+                                                        .width(200.dp)
+                                                        .height(38.dp),
+                                                    textStyle = MaterialTheme.typography.bodyMedium
+                                                )
 
-                            Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                                Surface(
-                                    modifier = Modifier.fillMaxWidth().height(AppConst.TOP_BAR_HEIGHT.dp),
-                                    color = surface
-                                ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxSize().padding(start = 20.dp, end = 16.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = AppConst.APP_NAME,
-                                            fontSize = 20.sp,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            color = primary,
-                                            letterSpacing = (-0.5).sp
+                                                Box(
+                                                    modifier = Modifier
+                                                        .padding(horizontal = 12.dp)
+                                                        .width(1.dp)
+                                                        .height(24.dp)
+                                                        .background(MaterialTheme.colorScheme.outlineVariant)
+                                                )
+
+                                                IconButton(
+                                                    onClick = {
+                                                        showSettingsDialog = true
+                                                    }
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Outlined.Settings,
+                                                        contentDescription = "Settings",
+                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                                Spacer(Modifier.width(8.dp))
+                                            }
+                                        },
+                                        colors = TopAppBarDefaults.topAppBarColors(
+                                            containerColor = MaterialTheme.colorScheme.surface
                                         )
-                                        Spacer(Modifier.width(16.dp))
-                                        state.currentAlbum?.let { album ->
+                                    )
+                                },
+                                containerColor = MaterialTheme.colorScheme.background
+                            ) { paddingValues ->
+                                Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                                    AnimatedVisibility(visible = state.isScanning, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+                                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                    }
+
+                                    state.currentAlbum?.let { album ->
+                                        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
                                             Text(
-                                                text = album.path.toString(),
-                                                fontSize = 12.sp,
-                                                color = onSurfaceVariant,
-                                                modifier = Modifier.weight(1f)
+                                                text = album.name,
+                                                style = MaterialTheme.typography.headlineLarge,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onBackground
+                                            )
+                                            Spacer(Modifier.height(4.dp))
+                                            Text(
+                                                text = "Sorted by Date Added • Descending",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
-
                                     }
-                                }
 
-                                HorizontalDivider(color = outlineVariant)
-
-                                AnimatedVisibility(visible = state.isScanning, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
-                                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                                }
-
-                                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                                    if (state.isScanning) {
-                                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                            Text("Scanning\u2026", color = onSurfaceVariant, fontSize = 15.sp)
+                                    val filteredImages = remember(state.currentAlbumImages, state.searchQuery) {
+                                        if (state.searchQuery.isEmpty()) {
+                                            state.currentAlbumImages
+                                        } else {
+                                            state.currentAlbumImages.filter { it.name.contains(state.searchQuery, ignoreCase = true) }
                                         }
-                                    } else {
-                                        GalleryView(
-                                            images = state.currentAlbumImages,
-                                            onImageClicked = { index -> loadViewerImage(index) },
-                                            onImageDoubleClicked = { index -> loadViewerImage(index) },
-                                            isDark = isDark,
-                                            hasAlbums = state.albums.isNotEmpty()
-                                        )
+                                    }
+
+                                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                                        if (state.isScanning) {
+                                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                                Text("Scanning\u2026", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+                                            }
+                                        } else {
+                                            GalleryView(
+                                                images = filteredImages,
+                                                onImageClicked = { index ->
+                                                    val image = filteredImages.getOrNull(index)
+                                                    if (image != null) {
+                                                        val fullIndex = state.currentAlbumImages.indexOf(image)
+                                                        if (fullIndex >= 0) loadViewerImage(fullIndex)
+                                                    }
+                                                },
+                                                onImageDoubleClicked = { index ->
+                                                    val image = filteredImages.getOrNull(index)
+                                                    if (image != null) {
+                                                        val fullIndex = state.currentAlbumImages.indexOf(image)
+                                                        if (fullIndex >= 0) loadViewerImage(fullIndex)
+                                                    }
+                                                },
+                                                isDark = isDark,
+                                                hasAlbums = state.albums.isNotEmpty()
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -808,7 +1013,7 @@ fun LinGalleryApp(
 
                         Surface(
                             modifier = Modifier.fillMaxWidth().height(32.dp),
-                            color = surface.copy(alpha = 0.95f)
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
                         ) {
                             Box(
                                 modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
@@ -817,21 +1022,78 @@ fun LinGalleryApp(
                                 Text(
                                     text = statusMessage,
                                     fontSize = 12.sp,
-                                    color = onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
                     }
                 }
                 is Screen.Viewer -> {
-            Column(modifier = Modifier.fillMaxSize().background(bg)) {
-                // Viewer top bar — stays in tree, hidden via height/alpha during fullscreen
-                        Surface(
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.radialGradient(
+                                    colors = listOf(
+                                        Color(0xFF1B2A2C), // Center: Elegant dark teal
+                                        Color(0xFF090E0F)  // Edges: Near pitch black
+                                    )
+                                )
+                            )
+                    ) {
+                        // 1. ImageViewer content area — fills the entire screen
+                        ImageViewer(
+                            path = state.currentImage?.path,
+                            scale = state.viewerState.scale,
+                            panX = state.viewerState.panX,
+                            panY = state.viewerState.panY,
+                            imageLastModified = state.currentImage?.lastModified ?: 0L,
+                            isCropping = state.viewerState.isCropping,
+                            cropRect = state.viewerState.cropRect?.let {
+                                androidx.compose.ui.geometry.Rect(it.x, it.y, it.x + it.width, it.y + it.height)
+                            },
+                            onScaleChange = { scale -> state = state.copy(viewerState = state.viewerState.copy(scale = scale)) },
+                            onPanChange = { px, py -> state = state.copy(viewerState = state.viewerState.copy(panX = px, panY = py)) },
+                            onCropRectChange = { displayCrop ->
+                                state = state.copy(
+                                    viewerState = state.viewerState.copy(
+                                        cropRect = if (displayCrop != null) CropRect(
+                                            x = displayCrop.rect.left, y = displayCrop.rect.top,
+                                            width = displayCrop.rect.width, height = displayCrop.rect.height
+                                        ) else null
+                                    )
+                                )
+                            },
+                            images = state.currentAlbumImages,
+                            currentIndex = state.viewerState.currentIndex,
+                            modifier = Modifier.fillMaxSize()
+                        )
+
+                        // 2. NavColumnOverlay (floating side navigation buttons)
+                        NavColumnOverlay(
+                            visible = !state.viewerState.isCropping,
+                            prevEnabled = state.viewerState.currentIndex > 0,
+                            nextEnabled = state.viewerState.currentIndex < state.currentAlbumImages.size - 1,
+                            onPrev = { navigateImage(-1) },
+                            onNext = { navigateImage(1) }
+                        )
+
+                        // 3. Top bar as overlay at the top (with a vertical scrim)
+                        Box(
                             modifier = Modifier
+                                .align(Alignment.TopCenter)
                                 .fillMaxWidth()
                                 .height(if (isFullscreen) 0.dp else AppConst.TOP_BAR_HEIGHT.dp)
-                                .graphicsLayer { alpha = if (isFullscreen) 0f else 1f },
-                            color = surface
+                                .graphicsLayer { alpha = if (isFullscreen) 0f else 1f }
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color.Black.copy(alpha = 0.5f),
+                                            Color.Transparent
+                                        )
+                                    )
+                                ),
+                            contentAlignment = Alignment.Center
                         ) {
                             AnimatedContent(
                                 targetState = state.viewerState.isCropping,
@@ -848,21 +1110,21 @@ fun LinGalleryApp(
                             ) { isCropping ->
                                 if (isCropping) {
                                     Row(
-                                        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+                                        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        TooltipIconButton(
-                                            icon = AppIcons.Crop,
-                                            tooltip = "Crop Mode",
-                                            onClick = {},
-                                            tint = primary
+                                        Icon(
+                                            imageVector = AppIcons.Crop,
+                                            contentDescription = "Crop Mode",
+                                            tint = Color(0xFF2DD4BF),
+                                            modifier = Modifier.size(20.dp)
                                         )
                                         Spacer(Modifier.width(8.dp))
                                         Text(
                                             text = "Crop Mode",
                                             fontSize = 14.sp,
                                             fontWeight = FontWeight.SemiBold,
-                                            color = primary
+                                            color = Color(0xFF2DD4BF)
                                         )
                                         Spacer(Modifier.weight(1f))
                                         OutlinedButton(
@@ -870,187 +1132,157 @@ fun LinGalleryApp(
                                                 cropModeTransitioning = false
                                                 state = state.copy(viewerState = state.viewerState.copy(isCropping = false, cropRect = null))
                                             },
+                                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
                                             shape = RoundedCornerShape(20.dp)
                                         ) { Text("Cancel") }
                                         Spacer(Modifier.width(8.dp))
                                         Button(
                                             onClick = ::doApplyCrop,
                                             enabled = state.viewerState.cropRect != null,
-                                            colors = ButtonDefaults.buttonColors(containerColor = primary),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = Color(0xFF2DD4BF),
+                                                contentColor = Color(0xFF003737),
+                                                disabledContainerColor = Color(0xFF1E2D30),
+                                                disabledContentColor = Color.White.copy(alpha = 0.3f)
+                                            ),
                                             shape = RoundedCornerShape(20.dp)
                                         ) { Text("Apply") }
                                     }
                                 } else {
                                     Row(
-                                        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+                                        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        TooltipIconButton(
-                                            icon = AppIcons.ArrowBack,
-                                            tooltip = "Back to Gallery (Esc)",
-                                            onClick = {
-                                                state = state.copy(screen = Screen.Gallery)
-                                                slideshowActive = false
-                                            },
-                                            tint = onSurface
-                                        )
-                                        Spacer(Modifier.width(8.dp))
-                                        Text(
-                                            text = state.currentImage?.name ?: "",
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = onSurface
-                                        )
-                                        Spacer(Modifier.width(8.dp))
-                                        Text(
-                                            text = "${state.viewerState.currentIndex + 1} / ${state.currentAlbumImages.size}",
-                                            fontSize = 12.sp,
-                                            color = onSurfaceVariant
-                                        )
-                                        Spacer(Modifier.weight(1f))
-                                        TooltipIconButton(
-                                            icon = AppIcons.ZoomOut,
-                                            tooltip = "Zoom out (-)",
-                                            onClick = ::zoomOut,
-                                            tint = onSurface,
-                                            preferTooltipAbove = false
-                                        )
-                                        Surface(
-                                            shape = RoundedCornerShape(8.dp),
-                                            color = MaterialTheme.colorScheme.surfaceVariant,
-                                            tonalElevation = 0.dp
-                                        ) {
-                                            val zoomPercentage = ((state.viewerState.scale * 100).toInt()).coerceIn(1, 9999)
-                                            val zoomLabel = if (zoomPercentage >= 1000) "${zoomPercentage / 100}.${(zoomPercentage % 100) / 10}K" else "$zoomPercentage%"
-                                            Text(
-                                                text = zoomLabel,
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier
-                                                    .widthIn(min = 46.dp)
-                                                    .clickable {
-                                                        state = state.copy(viewerState = state.viewerState.copy(scale = 1f, panX = 0f, panY = 0f))
+                                        Breadcrumbs(
+                                            path = state.currentImage?.path,
+                                            onSegmentClick = { part ->
+                                                if (Files.isDirectory(part)) {
+                                                    val idx = state.albums.indexOfFirst { it.path.toAbsolutePath().normalize() == part.toAbsolutePath().normalize() }
+                                                    if (idx >= 0) {
+                                                        state = state.copy(currentAlbumIndex = idx, screen = Screen.Gallery)
+                                                    } else {
+                                                        scope.launch {
+                                                            val album = withContext(Dispatchers.IO) { scanSingleDir(part) }
+                                                            if (album != null) {
+                                                                state = state.addAlbum(album)
+                                                                val newIdx = state.albums.indexOfFirst { it.path.toAbsolutePath().normalize() == part.toAbsolutePath().normalize() }
+                                                                if (newIdx >= 0) {
+                                                                    state = state.copy(currentAlbumIndex = newIdx, screen = Screen.Gallery)
+                                                                }
+                                                            }
+                                                        }
                                                     }
-                                                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                                            )
+                                                }
+                                            },
+                                            isDark = true
+                                        )
+
+                                        Spacer(Modifier.weight(1f))
+
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            // Zoom control capsule
+                                            Surface(
+                                                shape = RoundedCornerShape(100.dp),
+                                                color = Color(0x99141D1E),
+                                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                                                modifier = Modifier.height(36.dp)
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier.padding(horizontal = 4.dp)
+                                                ) {
+                                                    IconButton(onClick = ::zoomOut, modifier = Modifier.size(28.dp)) {
+                                                        Icon(
+                                                            imageVector = AppIcons.ZoomOut,
+                                                            contentDescription = "Zoom out",
+                                                            modifier = Modifier.size(16.dp),
+                                                            tint = Color(0xFFE2E8F0)
+                                                        )
+                                                    }
+                                                    val zoomPercentage = ((state.viewerState.scale * 100).toInt()).coerceIn(1, 9999)
+                                                    Text(
+                                                        text = "$zoomPercentage%",
+                                                        fontSize = 12.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color(0xFFE2E8F0),
+                                                        modifier = Modifier
+                                                            .padding(horizontal = 8.dp)
+                                                            .clickable {
+                                                                state = state.copy(viewerState = state.viewerState.copy(scale = 1f, panX = 0f, panY = 0f))
+                                                            }
+                                                    )
+                                                    IconButton(onClick = ::zoomIn, modifier = Modifier.size(28.dp)) {
+                                                        Icon(
+                                                            imageVector = AppIcons.ZoomIn,
+                                                            contentDescription = "Zoom in",
+                                                            modifier = Modifier.size(16.dp),
+                                                            tint = Color(0xFFE2E8F0)
+                                                        )
+                                                    }
+                                                }
+                                            }
+
+                                            // Slideshow control
+                                            IconButton(onClick = ::toggleSlideshow) {
+                                                Icon(
+                                                    imageVector = if (slideshowActive) AppIcons.Pause else AppIcons.PlayArrow,
+                                                    contentDescription = "Slideshow",
+                                                    tint = if (slideshowActive) Color(0xFF2DD4BF) else Color(0xFFE2E8F0)
+                                                )
+                                            }
+
+                                            // Fullscreen control
+                                            IconButton(onClick = ::toggleFullscreen) {
+                                                Icon(
+                                                    imageVector = if (isFullscreen) AppIcons.FullscreenExit else AppIcons.Fullscreen,
+                                                    contentDescription = "Fullscreen",
+                                                    tint = Color(0xFFE2E8F0)
+                                                )
+                                            }
+
+                                            // Settings / Mode control
+                                            IconButton(
+                                                onClick = {
+                                                    showSettingsDialog = true
+                                                }
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Outlined.Settings,
+                                                    contentDescription = "Settings",
+                                                    tint = Color(0xFFE2E8F0)
+                                                )
+                                            }
                                         }
-                                        TooltipIconButton(
-                                            icon = AppIcons.ZoomIn,
-                                            tooltip = "Zoom in (+)",
-                                            onClick = ::zoomIn,
-                                            tint = onSurface,
-                                            preferTooltipAbove = false
-                                        )
-                                        Spacer(Modifier.width(8.dp))
-                                        TooltipIconButton(
-                                            icon = if (slideshowActive) AppIcons.Pause else AppIcons.PlayArrow,
-                                            tooltip = "Slideshow (Space)",
-                                            onClick = ::toggleSlideshow,
-                                            tint = if (slideshowActive) primary else onSurface,
-                                            preferTooltipAbove = false
-                                        )
-                                        TooltipIconButton(
-                                            icon = if (isFullscreen) AppIcons.FullscreenExit else AppIcons.Fullscreen,
-                                            tooltip = "Fullscreen (F)",
-                                            onClick = ::toggleFullscreen,
-                                            tint = onSurface,
-                                            preferTooltipAbove = false
-                                        )
                                     }
                                 }
                             }
                         }
 
-                        HorizontalDivider(
-                            color = outlineVariant,
-                            modifier = Modifier
-                                .height(if (isFullscreen) 0.dp else 1.dp)
-                                .graphicsLayer { alpha = if (isFullscreen) 0f else 1f }
-                        )
-
-                        // Image viewer content area — single stable composable, nav columns overlaid
-                        Box(modifier = Modifier.weight(1f).fillMaxWidth().graphicsLayer { clip = true }) {
-                            ImageViewer(
-                                path = state.currentImage?.path,
-                                scale = state.viewerState.scale,
-                                panX = state.viewerState.panX,
-                                panY = state.viewerState.panY,
-                                imageLastModified = state.currentImage?.lastModified ?: 0L,
-                                isCropping = state.viewerState.isCropping,
-                                cropRect = state.viewerState.cropRect?.let {
-                                    androidx.compose.ui.geometry.Rect(it.x, it.y, it.x + it.width, it.y + it.height)
-                                },
-                                onScaleChange = { scale -> state = state.copy(viewerState = state.viewerState.copy(scale = scale)) },
-                                onPanChange = { px, py -> state = state.copy(viewerState = state.viewerState.copy(panX = px, panY = py)) },
-                                onCropRectChange = { displayCrop ->
-                                    state = state.copy(
-                                        viewerState = state.viewerState.copy(
-                                            cropRect = if (displayCrop != null) CropRect(
-                                                x = displayCrop.rect.left, y = displayCrop.rect.top,
-                                                width = displayCrop.rect.width, height = displayCrop.rect.height
-                                            ) else null
-                                        )
-                                    )
-                                },
-                                images = state.currentAlbumImages,
-                                currentIndex = state.viewerState.currentIndex,
-                                modifier = Modifier.fillMaxSize()
-                            )
-
-                            NavColumnOverlay(
-                                visible = !state.viewerState.isCropping,
-                                bg = bg,
-                                onSurface = onSurface,
-                                prevEnabled = state.viewerState.currentIndex > 0,
-                                nextEnabled = state.viewerState.currentIndex < state.currentAlbumImages.size - 1,
-                                onPrev = { navigateImage(-1) },
-                                onNext = { navigateImage(1) }
-                            )
-
-                            CropZoomControl(
-                                visible = state.viewerState.isCropping,
-                                scale = state.viewerState.scale,
-                                onZoomIn = ::zoomIn,
-                                onZoomOut = ::zoomOut,
-                                onReset = {
-                                    state = state.copy(viewerState = state.viewerState.copy(scale = 1f))
-                                }
-                            )
-
-                            if (isFullscreen) {
-                                Box(
-                                    modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .padding(8.dp)
-                                        .size(40.dp)
-                                        .stablePointerHoverIcon(PointerIcon.Hand)
-                                        .clickable { toggleFullscreen() },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = AppIcons.FullscreenExit,
-                                        contentDescription = "Exit Fullscreen (Esc)",
-                                        tint = onSurface
-                                    )
-                                }
+                        // 4. CropZoomControl overlay
+                        CropZoomControl(
+                            visible = state.viewerState.isCropping,
+                            scale = state.viewerState.scale,
+                            onZoomIn = ::zoomIn,
+                            onZoomOut = ::zoomOut,
+                            onReset = {
+                                state = state.copy(viewerState = state.viewerState.copy(scale = 1f))
                             }
-                        }
-
-                        HorizontalDivider(
-                            color = outlineVariant,
-                            modifier = Modifier
-                                .height(if (isFullscreen) 0.dp else 1.dp)
-                                .graphicsLayer { alpha = if (isFullscreen) 0f else 1f }
                         )
 
-                        // Bottom edit toolbar — hidden during crop mode
+                        // 5. Bottom edit toolbar overlay
                         AnimatedVisibility(
                             visible = !state.viewerState.isCropping && !isFullscreen,
                             enter = fadeIn(tween(280, easing = FastOutSlowInEasing)) +
                                     slideInVertically(tween(280, easing = FastOutSlowInEasing)) { it },
                             exit = fadeOut(tween(280, easing = FastOutSlowInEasing)) +
-                                   slideOutVertically(tween(280, easing = FastOutSlowInEasing)) { it }
+                                   slideOutVertically(tween(280, easing = FastOutSlowInEasing)) { it },
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 24.dp)
                         ) {
                             EditToolbar(
                                 isEditableFormat = state.currentImage?.let {
@@ -1071,6 +1303,25 @@ fun LinGalleryApp(
                                 isDark = isDark
                             )
                         }
+
+                        // Esc fullscreen Box
+                        if (isFullscreen) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(8.dp)
+                                    .size(40.dp)
+                                    .stablePointerHoverIcon(PointerIcon.Hand)
+                                    .clickable { toggleFullscreen() },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = AppIcons.FullscreenExit,
+                                    contentDescription = "Exit Fullscreen (Esc)",
+                                    tint = Color.White
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -1086,7 +1337,17 @@ fun LinGalleryApp(
                         showFilePicker = false
                         val op = pendingFileOp
                         pendingFileOp = ""
-                        if (op == "move" || op == "copy") {
+                        if (op == "add_album") {
+                            scope.launch {
+                                val album = withContext(Dispatchers.IO) { scanSingleDir(targetFolder) }
+                                if (album != null) {
+                                    state = state.addAlbum(album)
+                                    showSnackbar("Added album: ${album.name}")
+                                } else {
+                                    showErrorSnackbar("No images found in selected folder")
+                                }
+                            }
+                        } else if (op == "move" || op == "copy") {
                             val image = state.currentImage ?: return@FilePickerDialog
                             scope.launch {
                                 val result = withContext(Dispatchers.IO) {
@@ -1126,15 +1387,15 @@ fun LinGalleryApp(
                     title = { Text("Details", fontWeight = FontWeight.ExtraBold) },
                     text = {
                         Column {
-                            Text("Filename: ${state.currentImage?.name ?: ""}", fontSize = 12.sp, color = onSurface)
+                            Text("Filename: ${state.currentImage?.name ?: ""}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
                             Spacer(Modifier.height(8.dp))
                             exifData!!.forEach { (key, value) ->
                                 Row(
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text(key, fontSize = 12.sp, color = onSurfaceVariant, modifier = Modifier.weight(0.4f))
-                                    Text(value, fontSize = 12.sp, color = onSurface, modifier = Modifier.weight(0.6f))
+                                    Text(key, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(0.4f))
+                                    Text(value, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(0.6f))
                                 }
                             }
                         }
@@ -1156,15 +1417,15 @@ fun LinGalleryApp(
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = primary,
-                                cursorColor = primary
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                cursorColor = MaterialTheme.colorScheme.primary
                             )
                         )
                     },
                     confirmButton = {
                         Button(
                             onClick = ::executeRename,
-                            colors = ButtonDefaults.buttonColors(containerColor = primary),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                             shape = RoundedCornerShape(20.dp)
                         ) { Text("Rename") }
                     },
@@ -1183,7 +1444,7 @@ fun LinGalleryApp(
                     confirmButton = {
                         Button(
                             onClick = { executeCrop("copy") },
-                            colors = ButtonDefaults.buttonColors(containerColor = primary),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                             shape = RoundedCornerShape(20.dp)
                         ) { Text("Save as Copy") }
                     },
@@ -1199,68 +1460,189 @@ fun LinGalleryApp(
 
             // Delete confirmation
             if (showDeleteConfirm) {
+                val image = state.currentImage ?: return@LinGalleryTheme
                 AlertDialog(
                     onDismissRequest = {
                         permanentDeleteChecked = false
                         showDeleteConfirm = false
                     },
-                    title = { Text("Delete image") },
-                    text = {
+                    title = {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             Icon(
                                 imageVector = AppIcons.Delete,
                                 contentDescription = "Delete",
                                 modifier = Modifier.size(64.dp).align(Alignment.CenterHorizontally),
-                                tint = DarkPalette.ERROR
+                                tint = MaterialTheme.colorScheme.error
                             )
+                            Spacer(Modifier.width(16.dp))
+                            Text("Delete Image", style = MaterialTheme.typography.titleLarge)
+                        }
+                    },
+                    text = {
+                        Column {
+                            Text("Are you sure you want to delete ${image.name}?", style = MaterialTheme.typography.bodyMedium)
                             Spacer(Modifier.height(16.dp))
-                            Text("Delete ${state.currentImage?.name ?: ""}?")
-                            Spacer(Modifier.height(8.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(
-                                    checked = permanentDeleteChecked,
-                                    onCheckedChange = { permanentDeleteChecked = it }
-                                )
-                                Spacer(Modifier.width(4.dp))
-                                Text("Permanently delete (cannot be undone)", fontSize = 13.sp)
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { permanentDeleteChecked = !permanentDeleteChecked }) {
+                                Checkbox(checked = permanentDeleteChecked, onCheckedChange = { permanentDeleteChecked = it })
+                                Spacer(Modifier.width(8.dp))
+                                Text("Permanently delete", style = MaterialTheme.typography.bodyMedium)
                             }
                         }
                     },
                     confirmButton = {
-                        Button(onClick = ::confirmDelete, colors = ButtonDefaults.buttonColors(containerColor = DarkPalette.ERROR)) {
+                        Button(onClick = ::confirmDelete, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) {
                             Text("Delete")
                         }
                     },
-                    dismissButton = { TextButton(onClick = {
-                        permanentDeleteChecked = false
-                        showDeleteConfirm = false
-                    }) { Text("Cancel") } }
+                    dismissButton = {
+                        TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
+                    }
                 )
             }
 
             // Permanent delete warning
             if (showPermanentDeleteWarning) {
+                val image = state.currentImage ?: return@LinGalleryTheme
                 AlertDialog(
                     onDismissRequest = { showPermanentDeleteWarning = false },
-                    title = { Text("Permanently delete image") },
-                    text = {
-                        Column(modifier = Modifier.fillMaxWidth()) {
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 imageVector = AppIcons.Warning,
                                 contentDescription = "Warning",
-                                modifier = Modifier.size(64.dp).align(Alignment.CenterHorizontally),
-                                tint = DarkPalette.ERROR
+                                tint = MaterialTheme.colorScheme.error
                             )
-                            Spacer(Modifier.height(16.dp))
-                            Text("You're about to permanently delete ${state.currentImage?.name ?: ""}.\n\nThis action cannot be undone and the file will not be moved to Trash.")
+                            Spacer(Modifier.width(16.dp))
+                            Text("Permanently Delete", style = MaterialTheme.typography.titleLarge)
                         }
                     },
+                    text = {
+                        Text("This action cannot be undone. Are you absolutely sure you want to permanently delete ${image.name}?", style = MaterialTheme.typography.bodyMedium)
+                    },
                     confirmButton = {
-                        Button(onClick = ::confirmPermanentDelete, colors = ButtonDefaults.buttonColors(containerColor = DarkPalette.ERROR)) {
+                        Button(onClick = ::confirmPermanentDelete, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) {
                             Text("Delete Permanently")
                         }
                     },
                     dismissButton = { TextButton(onClick = { showPermanentDeleteWarning = false }) { Text("Cancel") } }
+                )
+            }
+
+            // Settings Dialog
+            if (showSettingsDialog) {
+                AlertDialog(
+                    onDismissRequest = { showSettingsDialog = false },
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Outlined.Settings,
+                                contentDescription = "Settings",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text("Settings / الإعدادات", style = MaterialTheme.typography.titleLarge)
+                        }
+                    },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            // 1. Dark Mode switch
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { isDark = !isDark }
+                                    .padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Dark Theme / المظهر الداكن", style = MaterialTheme.typography.bodyLarge)
+                                    Text("Enable dark mode for the entire application / تفعيل الوضع الداكن للتطبيق بالكامل", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Switch(
+                                    checked = isDark,
+                                    onCheckedChange = { isDark = it }
+                                )
+                            }
+                            
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                            // 2. Dynamic Color switch
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { isDynamicColor = !isDynamicColor }
+                                    .padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Dynamic Color / الألوان الحيوية (المطابقة)", style = MaterialTheme.typography.bodyLarge)
+                                    Text("Match theme accent color with the active image or album cover / مطابقة لون التطبيق تلقائياً مع ألوان الصورة أو الألبوم الحالي", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Switch(
+                                    checked = isDynamicColor,
+                                    onCheckedChange = { isDynamicColor = it }
+                                )
+                            }
+
+                            if (!isDynamicColor) {
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                                
+                                // 3. Preset color chooser
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("Accent Color / اللون الأساسي المفضل", style = MaterialTheme.typography.bodyLarge)
+                                    Text("Select a custom theme accent / اختر لونك المفضل للتطبيق", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    
+                                    val presets = listOf(
+                                        Pair("Cyan", Color(0xFF4FC3C3)),
+                                        Pair("Light Blue", Color(0xFF03A9F4)),
+                                        Pair("Blue", Color(0xFF2196F3)),
+                                        Pair("Dark Blue", Color(0xFF1A237E)),
+                                        Pair("Indigo", Color(0xFF3F51B5)),
+                                        Pair("Purple", Color(0xFF9C27B0)),
+                                        Pair("Green", Color(0xFF4CAF50)),
+                                        Pair("Orange", Color(0xFFFF9800)),
+                                        Pair("Red", Color(0xFFE91E63))
+                                    )
+                                    
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        modifier = Modifier.padding(top = 8.dp)
+                                    ) {
+                                        presets.forEach { (name, color) ->
+                                            val isSelected = userSeedColor == color
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(36.dp)
+                                                    .clip(RoundedCornerShape(100.dp))
+                                                    .background(color)
+                                                    .border(
+                                                        width = if (isSelected) 3.dp else 1.dp,
+                                                        color = if (isSelected) MaterialTheme.colorScheme.onSurface else Color.White.copy(alpha = 0.4f),
+                                                        shape = RoundedCornerShape(100.dp)
+                                                    )
+                                                    .clickable { userSeedColor = color },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                if (isSelected) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Check,
+                                                        contentDescription = "Selected",
+                                                        tint = Color.White,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        Button(onClick = { showSettingsDialog = false }) {
+                            Text("Done / تم")
+                        }
+                    }
                 )
             }
 
@@ -1330,61 +1712,65 @@ fun LinGalleryApp(
 @Composable
 private fun NavColumnOverlay(
     visible: Boolean,
-    bg: Color,
-    onSurface: Color,
     prevEnabled: Boolean,
     nextEnabled: Boolean,
     onPrev: () -> Unit,
     onNext: () -> Unit
 ) {
-    Row(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize()) {
         AnimatedVisibility(
-            visible = visible,
+            visible = visible && prevEnabled,
             enter = fadeIn(tween(280, easing = FastOutSlowInEasing)) +
                     slideInHorizontally(tween(280, easing = FastOutSlowInEasing)) { -it },
             exit = fadeOut(tween(280, easing = FastOutSlowInEasing)) +
-                   slideOutHorizontally(tween(280, easing = FastOutSlowInEasing)) { -it }
+                   slideOutHorizontally(tween(280, easing = FastOutSlowInEasing)) { -it },
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(start = 24.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .width(48.dp)
-                    .fillMaxHeight()
-                    .background(bg),
-                contentAlignment = Alignment.Center
+            Surface(
+                onClick = onPrev,
+                shape = RoundedCornerShape(50.dp),
+                color = Color.Black.copy(alpha = 0.4f),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+                modifier = Modifier.size(48.dp)
             ) {
-                TooltipIconButton(
-                    icon = AppIcons.NavigateBefore,
-                    tooltip = "Previous (\u2190)",
-                    onClick = onPrev,
-                    enabled = prevEnabled,
-                    tint = onSurface
-                )
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = AppIcons.NavigateBefore,
+                        contentDescription = "Previous (←)",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
             }
         }
 
-        Spacer(Modifier.weight(1f))
-
         AnimatedVisibility(
-            visible = visible,
+            visible = visible && nextEnabled,
             enter = fadeIn(tween(280, easing = FastOutSlowInEasing)) +
                     slideInHorizontally(tween(280, easing = FastOutSlowInEasing)) { it },
             exit = fadeOut(tween(280, easing = FastOutSlowInEasing)) +
-                   slideOutHorizontally(tween(280, easing = FastOutSlowInEasing)) { it }
+                   slideOutHorizontally(tween(280, easing = FastOutSlowInEasing)) { it },
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = 24.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .width(48.dp)
-                    .fillMaxHeight()
-                    .background(bg),
-                contentAlignment = Alignment.Center
+            Surface(
+                onClick = onNext,
+                shape = RoundedCornerShape(50.dp),
+                color = Color.Black.copy(alpha = 0.4f),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+                modifier = Modifier.size(48.dp)
             ) {
-                TooltipIconButton(
-                    icon = AppIcons.NavigateNext,
-                    tooltip = "Next (\u2192)",
-                    onClick = onNext,
-                    enabled = nextEnabled,
-                    tint = onSurface
-                )
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = AppIcons.NavigateNext,
+                        contentDescription = "Next (→)",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
             }
         }
     }
@@ -1414,6 +1800,34 @@ private fun CropZoomControl(
                 modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp)
             )
         }
+    }
+}
+
+fun extractDominantColor(file: java.io.File): Color {
+    try {
+        if (!file.exists() || !file.isFile) return Color(0xFF4FC3C3)
+        val image = javax.imageio.ImageIO.read(file) ?: return Color(0xFF4FC3C3)
+        val w = image.width
+        val h = image.height
+        var r = 0L
+        var g = 0L
+        var b = 0L
+        var count = 0
+        val stepX = maxOf(1, w / 15)
+        val stepY = maxOf(1, h / 15)
+        for (x in 0 until w step stepX) {
+            for (y in 0 until h step stepY) {
+                val rgb = image.getRGB(x, y)
+                r += (rgb shr 16) and 0xFF
+                g += (rgb shr 8) and 0xFF
+                b += rgb and 0xFF
+                count++
+            }
+        }
+        if (count == 0) return Color(0xFF4FC3C3)
+        return Color((r / count).toInt(), (g / count).toInt(), (b / count).toInt())
+    } catch (_: Exception) {
+        return Color(0xFF4FC3C3)
     }
 }
 
