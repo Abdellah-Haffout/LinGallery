@@ -220,6 +220,8 @@ class FileWatcher(
                         registerTree(path)
                         events.add(FileEvent.AlbumCreated(path))
                     }
+                } else if (isSupportedImage(path)) {
+                    events.add(FileEvent.ImageCreated(dir, path))
                 }
             }
         } catch (_: IOException) { }
@@ -287,5 +289,23 @@ class FileWatcher(
             else seen.add(key)
         }
         batch.removeAll(toRemove)
+
+        // Consolidate per-album image events into single AlbumModified
+        val albumsToSync = mutableSetOf<Path>()
+        val imageEvents = mutableListOf<FileEvent>()
+        for (event in batch) {
+            when (event) {
+                is FileEvent.ImageCreated -> { albumsToSync.add(event.albumPath); imageEvents.add(event) }
+                is FileEvent.ImageDeleted -> { albumsToSync.add(event.albumPath); imageEvents.add(event) }
+                is FileEvent.ImageModified -> { albumsToSync.add(event.albumPath); imageEvents.add(event) }
+                else -> {}
+            }
+        }
+        if (imageEvents.isNotEmpty()) {
+            batch.removeAll(imageEvents)
+            for (path in albumsToSync) {
+                batch.add(FileEvent.AlbumModified(path))
+            }
+        }
     }
 }

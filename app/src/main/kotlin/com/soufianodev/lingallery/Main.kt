@@ -649,24 +649,6 @@ fun LinGalleryApp(
         fileWatcher.start(this)
     }
 
-    suspend fun readImageFileInfoWithRetry(path: Path, maxRetries: Int = 5): ImageFile? = withContext(Dispatchers.IO) {
-        var result: ImageFile? = null
-        var attempt = 0
-        while (attempt < maxRetries && result == null) {
-            result = try {
-                readImageFileInfo(path)
-            } catch (_: Exception) { null }
-            if (result == null) {
-                delay(500L * (attempt + 1))
-                attempt++
-            }
-        }
-        if (result == null) {
-            println("[LinGallery] readImageFileInfo failed after $maxRetries attempts: $path")
-        }
-        result
-    }
-
     LaunchedEffect(Unit) {
         fileWatcher.events.collect { event ->
             when (event) {
@@ -686,22 +668,16 @@ fun LinGalleryApp(
                     statusMessage = "Album renamed"
                 }
                 is FileEvent.ImageCreated -> {
-                    val image = readImageFileInfoWithRetry(event.imagePath)
-                    if (image != null) {
-                        state = state.addImage(event.albumPath, image)
-                    }
+                    state = withContext(Dispatchers.IO) { state.syncAlbum(event.albumPath) }
                 }
                 is FileEvent.ImageDeleted -> {
-                    state = state.removeImage(event.albumPath, event.imagePath)
+                    state = withContext(Dispatchers.IO) { state.syncAlbum(event.albumPath) }
                 }
                 is FileEvent.AlbumModified -> {
                     state = withContext(Dispatchers.IO) { state.syncAlbum(event.path) }
                 }
                 is FileEvent.ImageModified -> {
-                    val image = readImageFileInfoWithRetry(event.imagePath)
-                    if (image != null) {
-                        state = state.modifyImage(event.albumPath, event.imagePath, image)
-                    }
+                    state = withContext(Dispatchers.IO) { state.syncAlbum(event.albumPath) }
                 }
             }
         }
