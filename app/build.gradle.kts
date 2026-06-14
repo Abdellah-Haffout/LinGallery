@@ -54,6 +54,12 @@ dependencies {
 compose.desktop {
     application {
         mainClass = "com.soufianodev.lingallery.MainKt"
+        jvmArgs += listOf(
+            "-Dskiko.renderApi=OPENGL",
+            "-Dskiko.gpu.resourceCacheLimit=128M",
+            "-Dsun.awt.enableExtraMouseButtons=false",
+            "-Xss512k"
+        )
     }
 }
 

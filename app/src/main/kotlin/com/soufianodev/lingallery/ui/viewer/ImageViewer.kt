@@ -2,6 +2,7 @@ package com.soufianodev.lingallery.ui.viewer
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -208,6 +209,11 @@ private fun ImageViewerContent(
     var viewWidth by remember { mutableFloatStateOf(0f) }
     var viewHeight by remember { mutableFloatStateOf(0f) }
     var cropEntryGen by remember { mutableIntStateOf(0) }
+    val fadeAlpha by animateFloatAsState(
+        targetValue = 1f,
+        animationSpec = tween(300),
+        label = "fadeAlpha"
+    )
 
     LaunchedEffect(isCropping) {
         if (isCropping) cropEntryGen++
@@ -349,7 +355,7 @@ private fun ImageViewerContent(
             exit = fadeOut(tween(200, easing = FastOutSlowInEasing))
         ) {
             Box(Modifier.fillMaxSize()) {
-                Canvas(modifier = Modifier.fillMaxSize()) {
+        Canvas(modifier = Modifier.fillMaxSize().graphicsLayer { alpha = fadeAlpha }) {
                     drawRect(
                         color = Color.White.copy(alpha = 0.12f),
                         topLeft = imageRect.topLeft,
