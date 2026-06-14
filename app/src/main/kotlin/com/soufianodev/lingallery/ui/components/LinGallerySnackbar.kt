@@ -5,8 +5,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -53,6 +55,8 @@ fun LinGallerySnackbar(
     message: String,
     style: SnackbarStyle,
     modifier: Modifier = Modifier,
+    title: String = "",
+    details: String = "",
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
     onDismiss: (() -> Unit)? = null,
@@ -123,37 +127,84 @@ fun LinGallerySnackbar(
                             SnackbarStyle.ERROR   -> DarkPalette.SNACKBAR_ERROR
                             else                  -> DarkPalette.PRIMARY
                         }
-                        Row(
-                            modifier = Modifier.padding(
-                                horizontal = 24.dp,
-                                vertical   = 18.dp
-                            ),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector     = icon,
-                                contentDescription = null,
-                                tint            = iconTint,
-                                modifier        = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Text(
-                                text  = message,
-                                color = DarkPalette.ON_SURFACE,
-                                style = MaterialTheme.typography.bodyLarge
-                            )
-                            if (isDismissible && (showCloseButton || !autoClose)) {
-                                Spacer(Modifier.width(8.dp))
-                                IconButton(
-                                    onClick = { onDismiss?.invoke() },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = if (closeIconStyle == CloseIconStyle.FILLED) Icons.Filled.Cancel else Icons.Filled.Close,
-                                        contentDescription = "Dismiss",
-                                        tint = borderColor,
-                                        modifier = Modifier.size(20.dp)
+
+                        if (details.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier.padding(
+                                    horizontal = 24.dp,
+                                    vertical   = 14.dp
+                                ),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector     = icon,
+                                    contentDescription = null,
+                                    tint            = iconTint,
+                                    modifier        = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(14.dp))
+                                Column {
+                                    Text(
+                                        text  = title.ifEmpty { message },
+                                        color = DarkPalette.ON_SURFACE,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = FontWeight.SemiBold
                                     )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text  = details,
+                                        color = DarkPalette.ON_SURFACE_VARIANT,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+                                if (isDismissible && (showCloseButton || !autoClose)) {
+                                    Spacer(Modifier.width(8.dp))
+                                    IconButton(
+                                        onClick = { onDismiss?.invoke() },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (closeIconStyle == CloseIconStyle.FILLED) Icons.Filled.Cancel else Icons.Filled.Close,
+                                            contentDescription = "Dismiss",
+                                            tint = borderColor,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier.padding(
+                                    horizontal = 24.dp,
+                                    vertical   = 18.dp
+                                ),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector     = icon,
+                                    contentDescription = null,
+                                    tint            = iconTint,
+                                    modifier        = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(14.dp))
+                                Text(
+                                    text  = message,
+                                    color = DarkPalette.ON_SURFACE,
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                                if (isDismissible && (showCloseButton || !autoClose)) {
+                                    Spacer(Modifier.width(8.dp))
+                                    IconButton(
+                                        onClick = { onDismiss?.invoke() },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (closeIconStyle == CloseIconStyle.FILLED) Icons.Filled.Cancel else Icons.Filled.Close,
+                                            contentDescription = "Dismiss",
+                                            tint = borderColor,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
                                 }
                             }
                         }

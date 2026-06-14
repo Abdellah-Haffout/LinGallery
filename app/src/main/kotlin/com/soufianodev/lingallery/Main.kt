@@ -130,10 +130,14 @@ fun LinGalleryApp(
     var snackbarIsDismissible by remember { mutableStateOf(true) }
     var snackbarCloseIconStyle by remember { mutableStateOf(CloseIconStyle.NORMAL) }
     var snackbarShowCloseButton by remember { mutableStateOf(false) }
+    var snackbarTitle by remember { mutableStateOf("") }
+    var snackbarDetails by remember { mutableStateOf("") }
     var cropModeTransitioning by remember { mutableStateOf(false) }
     val isDark = true
 
     fun showSnackbar(msg: String) {
+        snackbarTitle = ""
+        snackbarDetails = ""
         snackbarIsError = false
         snackbarAutoClose = true
         snackbarIsDismissible = true
@@ -142,7 +146,20 @@ fun LinGalleryApp(
         scope.launch { snackbarHostState.showSnackbar(msg) }
     }
 
+    fun showStructuredSnackbar(title: String, details: String) {
+        snackbarTitle = title
+        snackbarDetails = details
+        snackbarIsError = false
+        snackbarAutoClose = true
+        snackbarIsDismissible = true
+        snackbarCloseIconStyle = CloseIconStyle.NORMAL
+        snackbarShowCloseButton = false
+        scope.launch { snackbarHostState.showSnackbar(title) }
+    }
+
     fun showErrorSnackbar(msg: String) {
+        snackbarTitle = ""
+        snackbarDetails = ""
         snackbarIsError = true
         snackbarAutoClose = true
         snackbarIsDismissible = true
@@ -1088,7 +1105,11 @@ fun LinGalleryApp(
                                         state = state.copy(screen = Screen.Gallery)
                                     }
                                     state = state.addImage(targetFolder, newImage)
-                                    showSnackbar(if (op == "move") "Image moved" else "Image copied")
+                                    val srcName = image.path.parent?.fileName?.toString() ?: "?"
+                                    val dstName = targetFolder.fileName?.toString() ?: "?"
+                                    val title = if (op == "move") "Image moved" else "Image copied"
+                                    val details = "$srcName ⟶ $dstName"
+                                    showStructuredSnackbar(title, details)
                                 } else {
                                     showErrorSnackbar("Operation failed")
                                 }
@@ -1247,9 +1268,13 @@ fun LinGalleryApp(
                 val snackbarData = snackbarHostState.currentSnackbarData
                 var lastSnackbarData by remember { mutableStateOf<SnackbarData?>(null) }
                 var lastDataIsError by remember { mutableStateOf(false) }
+                var lastSnackbarTitle by remember { mutableStateOf("") }
+                var lastSnackbarDetails by remember { mutableStateOf("") }
                 if (snackbarData != null) {
                     lastSnackbarData = snackbarData
                     lastDataIsError = snackbarIsError
+                    lastSnackbarTitle = snackbarTitle
+                    lastSnackbarDetails = snackbarDetails
                 }
 
                 AnimatedVisibility(
@@ -1268,6 +1293,8 @@ fun LinGalleryApp(
 
                         LinGallerySnackbar(
                             message = data.visuals.message,
+                            title = lastSnackbarTitle,
+                            details = lastSnackbarDetails,
                             style = style,
                             modifier = Modifier.padding(top = (AppConst.TOP_BAR_HEIGHT + 12).dp),
                             actionLabel = data.visuals.actionLabel,
