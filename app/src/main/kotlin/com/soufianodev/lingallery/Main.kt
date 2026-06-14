@@ -53,6 +53,7 @@ import com.soufianodev.lingallery.ui.gallery.GalleryView
 import com.soufianodev.lingallery.ui.viewer.EditToolbar
 import com.soufianodev.lingallery.ui.viewer.FloatingZoomControl
 import com.soufianodev.lingallery.ui.viewer.ImageViewer
+import kotlin.system.exitProcess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -84,6 +85,7 @@ fun main() = application {
             fileWatcher.stop()
             galleryIndex.close()
             exitApplication()
+            exitProcess(0)
         },
         title = "LinGallery",
         state = windowState
