@@ -60,13 +60,6 @@ Double-click a thumbnail to open an image. Use arrow keys (or A/D) to navigate. 
 | Delete | Delete current image |
 | Esc | Back to gallery / cancel crop |
 
-## Common problems
-
-**Program does not start** -- Make sure Java 21 is installed. Run `java --version` to check.
-
-**Images not showing up** -- LinGallery scans Pictures, Downloads, and Desktop by default. Move your images into one of these folders or adjust the scan roots in the code.
-
-**Slow with many images** -- The first scan takes time. Subsequent starts load from a cache.
 
 ## For developers
 
