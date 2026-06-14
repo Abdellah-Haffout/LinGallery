@@ -32,6 +32,9 @@ object DarkPalette {
     val SCRIM = Color(0xFF000000)
     val SHADOW = Color(0xFF000000)
     val DIVIDER = Color(0xFF1E2D38)
+
+    val SNACKBAR_ERROR = Color(0xFFFF6B6B)
+    val SNACKBAR_ERROR_BORDER = Color(0xFFE24A4A)
 }
 
 object LightPalette {

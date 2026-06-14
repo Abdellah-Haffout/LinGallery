@@ -99,6 +99,8 @@ fun EditToolbar(
             TooltipIconButton(icon = AppIcons.Info, tooltip = "Image Info (I)", onClick = onInfo, tint = onSurface)
             TooltipIconButton(icon = AppIcons.Delete, tooltip = "Delete (Del)", onClick = onDelete, tint = onSurface)
 
+            Spacer(Modifier.width(24.dp))
+
             Spacer(Modifier.weight(1f))
         }
     }

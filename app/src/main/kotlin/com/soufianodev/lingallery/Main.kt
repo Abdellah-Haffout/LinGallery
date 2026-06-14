@@ -39,6 +39,9 @@ import com.soufianodev.lingallery.data.ScanEvent
 import com.soufianodev.lingallery.processing.ImageEditor
 import com.soufianodev.lingallery.theme.AppConst
 import com.soufianodev.lingallery.theme.AppIcons
+import com.soufianodev.lingallery.ui.components.CloseIconStyle
+import com.soufianodev.lingallery.ui.components.LinGallerySnackbar
+import com.soufianodev.lingallery.ui.components.SnackbarStyle
 import com.soufianodev.lingallery.ui.components.TooltipIconButton
 import com.soufianodev.lingallery.ui.components.stablePointerHoverIcon
 import com.soufianodev.lingallery.theme.DarkPalette
@@ -120,10 +123,29 @@ fun LinGalleryApp(
     val scope = rememberCoroutineScope()
     val focusRequester = remember { FocusRequester() }
     val snackbarHostState = remember { SnackbarHostState() }
+    var snackbarIsError by remember { mutableStateOf(false) }
+    var snackbarAutoClose by remember { mutableStateOf(true) }
+    var snackbarIsDismissible by remember { mutableStateOf(true) }
+    var snackbarCloseIconStyle by remember { mutableStateOf(CloseIconStyle.NORMAL) }
+    var snackbarShowCloseButton by remember { mutableStateOf(false) }
     var cropModeTransitioning by remember { mutableStateOf(false) }
     val isDark = true
 
     fun showSnackbar(msg: String) {
+        snackbarIsError = false
+        snackbarAutoClose = true
+        snackbarIsDismissible = true
+        snackbarCloseIconStyle = CloseIconStyle.NORMAL
+        snackbarShowCloseButton = false
+        scope.launch { snackbarHostState.showSnackbar(msg) }
+    }
+
+    fun showErrorSnackbar(msg: String) {
+        snackbarIsError = true
+        snackbarAutoClose = true
+        snackbarIsDismissible = true
+        snackbarCloseIconStyle = CloseIconStyle.NORMAL
+        snackbarShowCloseButton = false
         scope.launch { snackbarHostState.showSnackbar(msg) }
     }
 
@@ -244,7 +266,7 @@ fun LinGalleryApp(
                 }
             } else {
                 state = state.copy(viewerState = state.viewerState.copy(isCropping = false, cropRect = null))
-                showSnackbar("Crop failed")
+                showErrorSnackbar("Crop failed")
             }
         }
     }
@@ -289,7 +311,7 @@ fun LinGalleryApp(
                 }
                 showSnackbar("Image renamed")
             } else {
-                showSnackbar("Rename failed")
+                showErrorSnackbar("Rename failed")
             }
         }
     }
@@ -310,9 +332,8 @@ fun LinGalleryApp(
             val ok = withContext(Dispatchers.IO) { ImageEditor.rotate(path, -90) }
             if (ok) {
                 refreshCurrentImageFile()
-                showSnackbar("Rotated 90\u00B0 left")
             } else {
-                showSnackbar("Rotate failed")
+                showErrorSnackbar("Rotate failed")
             }
         }
     }
@@ -323,9 +344,8 @@ fun LinGalleryApp(
             val ok = withContext(Dispatchers.IO) { ImageEditor.rotate(path, 90) }
             if (ok) {
                 refreshCurrentImageFile()
-                showSnackbar("Rotated 90\u00B0 right")
             } else {
-                showSnackbar("Rotate failed")
+                showErrorSnackbar("Rotate failed")
             }
         }
     }
@@ -336,9 +356,8 @@ fun LinGalleryApp(
             val ok = withContext(Dispatchers.IO) { ImageEditor.flipHorizontal(path) }
             if (ok) {
                 refreshCurrentImageFile()
-                showSnackbar("Image flipped horizontally")
             } else {
-                showSnackbar("Flip failed")
+                showErrorSnackbar("Flip failed")
             }
         }
     }
@@ -371,7 +390,7 @@ fun LinGalleryApp(
                 TrashManager.restoreFromTrash(record.trashPath, record.imageFile.path)
             }
             if (ok.isFailure) {
-                showSnackbar("Undo failed")
+                showErrorSnackbar("Undo failed")
                 return@launch
             }
 
@@ -392,7 +411,7 @@ fun LinGalleryApp(
                 )
                 albumIdx = record.albumIndex.coerceAtMost(state.albums.size)
                 if (state.albums.any { it.path == album.path }) {
-                    showSnackbar("Album already exists")
+                    showErrorSnackbar("Album already exists")
                     return@launch
                 }
                 val newAlbums = state.albums.toMutableList()
@@ -403,7 +422,7 @@ fun LinGalleryApp(
             val mutableImages = album.images.toMutableList()
             val insertIdx = record.imageIndex.coerceAtMost(mutableImages.size)
             if (mutableImages.any { it.path == record.imageFile.path }) {
-                showSnackbar("Image already restored")
+                showErrorSnackbar("Image already restored")
                 state = state.copy(deletionRecord = null)
                 return@launch
             }
@@ -454,7 +473,7 @@ fun LinGalleryApp(
                 TrashManager.moveToTrash(image.path)
             }
             if (trashResult.isFailure) {
-                showSnackbar("Delete failed")
+                showErrorSnackbar("Delete failed")
                 return@launch
             }
             val trashPath = trashResult.getOrThrow()
@@ -488,7 +507,7 @@ fun LinGalleryApp(
             java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(selection, null)
             showSnackbar("Name copied to clipboard")
         } catch (_: Exception) {
-            showSnackbar("Failed to copy name to clipboard")
+            showErrorSnackbar("Failed to copy name to clipboard")
         }
     }
 
@@ -499,7 +518,7 @@ fun LinGalleryApp(
             java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(selection, null)
             showSnackbar("Path copied to clipboard")
         } catch (_: Exception) {
-            showSnackbar("Failed to copy to clipboard")
+            showErrorSnackbar("Failed to copy to clipboard")
         }
     }
 
@@ -518,7 +537,7 @@ fun LinGalleryApp(
             java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(transferable, null)
             showSnackbar("Image copied to clipboard")
         } catch (_: Exception) {
-            showSnackbar("Copy to clipboard failed")
+            showErrorSnackbar("Copy to clipboard failed")
         }
     }
 
@@ -1093,7 +1112,7 @@ fun LinGalleryApp(
                                     state = state.addImage(targetFolder, newImage)
                                     showSnackbar(if (op == "move") "Image moved" else "Image copied")
                                 } else {
-                                    showSnackbar("Operation failed")
+                                    showErrorSnackbar("Operation failed")
                                 }
                             }
                         }
@@ -1249,7 +1268,11 @@ fun LinGalleryApp(
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                 val snackbarData = snackbarHostState.currentSnackbarData
                 var lastSnackbarData by remember { mutableStateOf<SnackbarData?>(null) }
-                if (snackbarData != null) lastSnackbarData = snackbarData
+                var lastDataIsError by remember { mutableStateOf(false) }
+                if (snackbarData != null) {
+                    lastSnackbarData = snackbarData
+                    lastDataIsError = snackbarIsError
+                }
 
                 AnimatedVisibility(
                     visible = snackbarData != null,
@@ -1257,40 +1280,32 @@ fun LinGalleryApp(
                     exit = slideOutVertically { -it } + fadeOut()
                 ) {
                     lastSnackbarData?.let { data ->
-                        val actionLabel = data.visuals.actionLabel
-                        Snackbar(
-                            modifier = Modifier
-                                .padding(top = (AppConst.TOP_BAR_HEIGHT + 12).dp)
-                                .border(1.dp, DarkPalette.PRIMARY, RoundedCornerShape(12.dp)),
-                            containerColor = DarkPalette.SURFACE_CONTAINER,
-                            contentColor = DarkPalette.ON_SURFACE,
-                            shape = RoundedCornerShape(12.dp),
-                            action = {
-                                if (actionLabel != null) {
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(20.dp))
-                                            .background(DarkPalette.PRIMARY)
-                                            .clickable { data.performAction() }
-                                            .padding(horizontal = 16.dp, vertical = 6.dp)
-                                    ) {
-                                        Text(
-                                            text = actionLabel,
-                                            color = DarkPalette.ON_PRIMARY,
-                                            style = MaterialTheme.typography.labelLarge,
-                                            fontWeight = FontWeight.Medium
-                                        )
-                                    }
-                                }
-                            }
-                        ) {
-                            Text(text = data.visuals.message)
+                        val hasAction = data.visuals.actionLabel != null
+                        val style = when {
+                            hasAction && lastDataIsError -> SnackbarStyle.ERROR_ACTION
+                            hasAction -> SnackbarStyle.ACTION
+                            lastDataIsError -> SnackbarStyle.ERROR
+                            else -> SnackbarStyle.SUCCESS
                         }
+
+                        LinGallerySnackbar(
+                            message = data.visuals.message,
+                            style = style,
+                            modifier = Modifier.padding(top = (AppConst.TOP_BAR_HEIGHT + 12).dp),
+                            actionLabel = data.visuals.actionLabel,
+                            onAction = { data.performAction() },
+                            onDismiss = { data.dismiss() },
+                            autoClose = snackbarAutoClose,
+                            isDismissible = snackbarIsDismissible,
+                            closeIconStyle = snackbarCloseIconStyle,
+                            showCloseButton = snackbarShowCloseButton
+                        )
                     }
                 }
 
                 LaunchedEffect(snackbarData) {
-                    if (snackbarData != null) {
+                    val effectiveAutoClose = if (!snackbarAutoClose && !snackbarIsDismissible) true else snackbarAutoClose
+                    if (snackbarData != null && effectiveAutoClose) {
                         val hasAction = snackbarData.visuals.actionLabel != null
                         when (snackbarData.visuals.duration) {
                             SnackbarDuration.Short -> delay(4000L)
