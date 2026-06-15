@@ -1,7 +1,6 @@
 package com.soufianodev.lingallery.theme
 
 object AppConst {
-    const val APP_NAME = "LinGallery"
     const val APP_VERSION = "1.0.0"
     val DEFAULT_SCAN_ROOTS = listOf("~/Pictures", "~/Downloads", "~/Desktop")
 

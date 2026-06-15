@@ -36,6 +36,7 @@ import com.github.panpf.sketch.request.ImageResult
 import com.github.panpf.sketch.PlatformContext
 import com.github.panpf.sketch.request.Disposable
 import com.soufianodev.lingallery.data.ImageFile
+import com.soufianodev.lingallery.i18n.Strings
 import com.soufianodev.lingallery.theme.AppConst
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -149,7 +150,7 @@ fun ImageViewer(
         when {
             loadError -> {
                 Text(
-                    text = "Failed to load image",
+                    text = Strings.Viewer.failedLoad,
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodyLarge
                 )

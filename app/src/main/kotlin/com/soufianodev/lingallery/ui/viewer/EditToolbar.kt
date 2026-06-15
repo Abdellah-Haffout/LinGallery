@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
+import com.soufianodev.lingallery.i18n.Strings
 import com.soufianodev.lingallery.theme.AppConst
 import com.soufianodev.lingallery.theme.AppIcons
 import com.soufianodev.lingallery.ui.components.TooltipIconButton
@@ -55,49 +56,49 @@ fun EditToolbar(
         ) {
             Spacer(Modifier.weight(1f))
 
-            TooltipIconButton(icon = AppIcons.RotateLeft, tooltip = "Rotate Left (L)", onClick = onRotateLeft, tint = onSurface, enabled = isEditableFormat)
-            TooltipIconButton(icon = AppIcons.RotateRight, tooltip = "Rotate Right (R)", onClick = onRotateRight, tint = onSurface, enabled = isEditableFormat)
-            TooltipIconButton(icon = AppIcons.Flip, tooltip = "Flip Horizontal", onClick = onFlipH, tint = onSurface, enabled = isEditableFormat)
+            TooltipIconButton(icon = AppIcons.RotateLeft, tooltip = Strings.Tooltips.rotateLeft, onClick = onRotateLeft, tint = onSurface, enabled = isEditableFormat)
+            TooltipIconButton(icon = AppIcons.RotateRight, tooltip = Strings.Tooltips.rotateRight, onClick = onRotateRight, tint = onSurface, enabled = isEditableFormat)
+            TooltipIconButton(icon = AppIcons.Flip, tooltip = Strings.Tooltips.flipHorizontal, onClick = onFlipH, tint = onSurface, enabled = isEditableFormat)
 
             Spacer(Modifier.width(16.dp))
 
-            TooltipIconButton(icon = AppIcons.Crop, tooltip = "Crop (C)", onClick = onCrop, tint = onSurface, enabled = isEditableFormat)
+            TooltipIconButton(icon = AppIcons.Crop, tooltip = Strings.Tooltips.crop, onClick = onCrop, tint = onSurface, enabled = isEditableFormat)
 
             Spacer(Modifier.width(24.dp))
 
             // Copy button with dropdown
             Box {
-                TooltipIconButton(icon = AppIcons.ContentCopy, tooltip = "Copy image", onClick = { showCopyMenu = !showCopyMenu }, tint = onSurface)
+                TooltipIconButton(icon = AppIcons.ContentCopy, tooltip = Strings.Tooltips.copyImage, onClick = { showCopyMenu = !showCopyMenu }, tint = onSurface)
                 DropdownMenu(
                     expanded = showCopyMenu,
                     onDismissRequest = { showCopyMenu = false },
                     properties = PopupProperties(focusable = false)
                 ) {
-                    DropdownMenuItem(text = { Text("Copy image to clipboard", fontSize = 13.sp) }, onClick = { showCopyMenu = false; onCopyClipboard() })
-                    DropdownMenuItem(text = { Text("Copy image name to clipboard", fontSize = 13.sp) }, onClick = { showCopyMenu = false; onCopyName() })
-                    DropdownMenuItem(text = { Text("Copy image path to clipboard", fontSize = 13.sp) }, onClick = { showCopyMenu = false; onCopyPath() })
+                    DropdownMenuItem(text = { Text(Strings.Menu.copyClipboard, fontSize = 13.sp) }, onClick = { showCopyMenu = false; onCopyClipboard() })
+                    DropdownMenuItem(text = { Text(Strings.Menu.copyName, fontSize = 13.sp) }, onClick = { showCopyMenu = false; onCopyName() })
+                    DropdownMenuItem(text = { Text(Strings.Menu.copyPath, fontSize = 13.sp) }, onClick = { showCopyMenu = false; onCopyPath() })
                 }
             }
 
             // Transfer button with dropdown
             Box {
-                TooltipIconButton(icon = AppIcons.Transfer, tooltip = "Transfer image", onClick = { showTransferMenu = !showTransferMenu }, tint = onSurface)
+                TooltipIconButton(icon = AppIcons.Transfer, tooltip = Strings.Tooltips.transferImage, onClick = { showTransferMenu = !showTransferMenu }, tint = onSurface)
                 DropdownMenu(
                     expanded = showTransferMenu,
                     onDismissRequest = { showTransferMenu = false },
                     properties = PopupProperties(focusable = false)
                 ) {
-                    DropdownMenuItem(text = { Text("Move image to another folder", fontSize = 13.sp) }, onClick = { showTransferMenu = false; onMove() })
-                    DropdownMenuItem(text = { Text("Copy image to another folder", fontSize = 13.sp) }, onClick = { showTransferMenu = false; onCopyFile() })
+                    DropdownMenuItem(text = { Text(Strings.Menu.moveFolder, fontSize = 13.sp) }, onClick = { showTransferMenu = false; onMove() })
+                    DropdownMenuItem(text = { Text(Strings.Menu.copyFolder, fontSize = 13.sp) }, onClick = { showTransferMenu = false; onCopyFile() })
                 }
             }
 
-            TooltipIconButton(icon = AppIcons.Edit, tooltip = "Rename", onClick = onRename, tint = onSurface)
+            TooltipIconButton(icon = AppIcons.Edit, tooltip = Strings.Tooltips.rename, onClick = onRename, tint = onSurface)
 
             Spacer(Modifier.width(24.dp))
 
-            TooltipIconButton(icon = AppIcons.Info, tooltip = "Image Info (I)", onClick = onInfo, tint = onSurface)
-            TooltipIconButton(icon = AppIcons.Delete, tooltip = "Delete (Del)", onClick = onDelete, tint = onSurface)
+            TooltipIconButton(icon = AppIcons.Info, tooltip = Strings.Tooltips.imageInfo, onClick = onInfo, tint = onSurface)
+            TooltipIconButton(icon = AppIcons.Delete, tooltip = Strings.Tooltips.delete, onClick = onDelete, tint = onSurface)
 
             Spacer(Modifier.width(24.dp))
 

@@ -37,6 +37,7 @@ import com.soufianodev.lingallery.data.FileIndexer
 import com.soufianodev.lingallery.data.GalleryIndex
 import com.soufianodev.lingallery.data.ScanEvent
 import com.soufianodev.lingallery.processing.ImageEditor
+import com.soufianodev.lingallery.i18n.Strings
 import com.soufianodev.lingallery.theme.AppConst
 import com.soufianodev.lingallery.theme.AppIcons
 import com.soufianodev.lingallery.ui.components.CloseIconStyle
@@ -87,7 +88,7 @@ fun main() = application {
             exitApplication()
             exitProcess(0)
         },
-        title = "LinGallery",
+        title = Strings.App.name,
         state = windowState
     ) {
         LinGalleryApp(
@@ -119,7 +120,7 @@ fun LinGalleryApp(
     var renameText by remember { mutableStateOf("") }
     var slideshowActive by remember { mutableStateOf(false) }
     var pendingFileOp by remember { mutableStateOf("") }
-    var statusMessage by remember { mutableStateOf("Scanning for images\u2026") }
+    var statusMessage by remember { mutableStateOf(Strings.Status.scanning) }
     var isFullscreen by remember { mutableStateOf(false) }
     var savedWindowBounds by remember { mutableStateOf<java.awt.Rectangle?>(null) }
     val scope = rememberCoroutineScope()
@@ -273,19 +274,19 @@ fun LinGalleryApp(
                                 panY = 0f
                             )
                         )
-                        showSnackbar("Saved copy")
+                        showSnackbar(Strings.Snackbar.savedCopy)
                     } else {
                         state = state.copy(viewerState = state.viewerState.copy(isCropping = false, cropRect = null))
-                        showSnackbar("Saved copy")
+                        showSnackbar(Strings.Snackbar.savedCopy)
                     }
                 } else {
                     state = state.copy(viewerState = state.viewerState.copy(isCropping = false, cropRect = null))
                     refreshCurrentImageFile()
-                    showSnackbar("Image cropped")
+                    showSnackbar(Strings.Snackbar.imageCropped)
                 }
             } else {
                 state = state.copy(viewerState = state.viewerState.copy(isCropping = false, cropRect = null))
-                showErrorSnackbar("Crop failed")
+                showErrorSnackbar(Strings.Snackbar.cropFailed)
             }
         }
     }
@@ -328,9 +329,9 @@ fun LinGalleryApp(
                 if (state.screen is Screen.Viewer) {
                     loadViewerImage(state.viewerState.currentIndex)
                 }
-                showSnackbar("Image renamed")
+                showSnackbar(Strings.Snackbar.imageRenamed)
             } else {
-                showErrorSnackbar("Rename failed")
+                showErrorSnackbar(Strings.Snackbar.renameFailed)
             }
         }
     }
@@ -352,7 +353,7 @@ fun LinGalleryApp(
             if (ok) {
                 refreshCurrentImageFile()
             } else {
-                showErrorSnackbar("Rotate failed")
+                showErrorSnackbar(Strings.Snackbar.rotateFailed)
             }
         }
     }
@@ -364,7 +365,7 @@ fun LinGalleryApp(
             if (ok) {
                 refreshCurrentImageFile()
             } else {
-                showErrorSnackbar("Rotate failed")
+                showErrorSnackbar(Strings.Snackbar.rotateFailed)
             }
         }
     }
@@ -376,7 +377,7 @@ fun LinGalleryApp(
             if (ok) {
                 refreshCurrentImageFile()
             } else {
-                showErrorSnackbar("Flip failed")
+                showErrorSnackbar(Strings.Snackbar.flipFailed)
             }
         }
     }
@@ -409,7 +410,7 @@ fun LinGalleryApp(
                 TrashManager.restoreFromTrash(record.trashPath, record.imageFile.path)
             }
             if (ok.isFailure) {
-                showErrorSnackbar("Undo failed")
+                showErrorSnackbar(Strings.Snackbar.undoFailed)
                 return@launch
             }
 
@@ -430,7 +431,7 @@ fun LinGalleryApp(
                 )
                 albumIdx = record.albumIndex.coerceAtMost(state.albums.size)
                 if (state.albums.any { it.path == album.path }) {
-                    showErrorSnackbar("Album already exists")
+                    showErrorSnackbar(Strings.Snackbar.albumExists)
                     return@launch
                 }
                 val newAlbums = state.albums.toMutableList()
@@ -441,7 +442,7 @@ fun LinGalleryApp(
             val mutableImages = album.images.toMutableList()
             val insertIdx = record.imageIndex.coerceAtMost(mutableImages.size)
             if (mutableImages.any { it.path == record.imageFile.path }) {
-                showErrorSnackbar("Image already restored")
+                showErrorSnackbar(Strings.Snackbar.imageRestored)
                 state = state.copy(deletionRecord = null)
                 return@launch
             }
@@ -458,7 +459,7 @@ fun LinGalleryApp(
                 screen = Screen.Viewer(insertIdx),
                 viewerState = ViewerState(currentIndex = insertIdx)
             )
-            showSnackbar("Restored ${record.imageFile.name}")
+            showSnackbar(Strings.Snackbar.restored(record.imageFile.name))
         }
     }
 
@@ -472,7 +473,7 @@ fun LinGalleryApp(
             }
 
             state = state.removeImage(image.path.parent, image.path)
-            showSnackbar("Permanently deleted ${image.name}")
+            showSnackbar(Strings.Snackbar.permanentlyDeleted(image.name))
         }
     }
 
@@ -492,7 +493,7 @@ fun LinGalleryApp(
                 TrashManager.moveToTrash(image.path)
             }
             if (trashResult.isFailure) {
-                showErrorSnackbar("Delete failed")
+                showErrorSnackbar(Strings.Snackbar.deleteFailed)
                 return@launch
             }
             val trashPath = trashResult.getOrThrow()
@@ -509,8 +510,8 @@ fun LinGalleryApp(
             state = state.copy(deletionRecord = newRecord)
 
             val result = snackbarHostState.showSnackbar(
-                message = "Deleted ${image.name}",
-                actionLabel = "Undo",
+                message = Strings.Snackbar.deleted(image.name),
+                actionLabel = Strings.Buttons.undo,
                 duration = SnackbarDuration.Indefinite
             )
             if (result == SnackbarResult.ActionPerformed) {
@@ -524,9 +525,9 @@ fun LinGalleryApp(
         try {
             val selection = java.awt.datatransfer.StringSelection(image.name)
             java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(selection, null)
-            showSnackbar("Name copied to clipboard")
+            showSnackbar(Strings.Snackbar.nameCopied)
         } catch (_: Exception) {
-            showErrorSnackbar("Failed to copy name to clipboard")
+            showErrorSnackbar(Strings.Snackbar.nameCopyFailed)
         }
     }
 
@@ -535,9 +536,9 @@ fun LinGalleryApp(
         try {
             val selection = java.awt.datatransfer.StringSelection(image.path.toString())
             java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(selection, null)
-            showSnackbar("Path copied to clipboard")
+            showSnackbar(Strings.Snackbar.pathCopied)
         } catch (_: Exception) {
-            showErrorSnackbar("Failed to copy to clipboard")
+            showErrorSnackbar(Strings.Snackbar.copyFailed)
         }
     }
 
@@ -554,9 +555,9 @@ fun LinGalleryApp(
                 override fun getTransferData(flavor: java.awt.datatransfer.DataFlavor?) = img
             }
             java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(transferable, null)
-            showSnackbar("Image copied to clipboard")
+            showSnackbar(Strings.Snackbar.imageCopied)
         } catch (_: Exception) {
-            showErrorSnackbar("Copy to clipboard failed")
+            showErrorSnackbar(Strings.Snackbar.copyFailed)
         }
     }
 
@@ -636,10 +637,10 @@ fun LinGalleryApp(
         val cachedState = withContext(Dispatchers.IO) { galleryIndex.loadSnapshot() }
         if (cachedState != null) {
             state = cachedState.sortAlbums().pruneEmptyAlbums()
-            statusMessage = "Loaded ${state.albums.size} albums from cache"
+            statusMessage = Strings.Status.loadedCache(state.albums.size)
         } else {
             state = state.copy(isScanning = true)
-            statusMessage = "Scanning for images\u2026"
+            statusMessage = Strings.Status.scanning
         }
 
         val indexer = FileIndexer(AppConst.DEFAULT_SCAN_ROOTS)
@@ -650,14 +651,14 @@ fun LinGalleryApp(
             when (event) {
                 is ScanEvent.AlbumFound -> {
                     state = state.addAlbum(event.album)
-                    statusMessage = "Discovered: ${event.album.name}"
+                    statusMessage = Strings.Status.discovered(event.album.name)
                 }
                 is ScanEvent.ProgressUpdate -> {
-                    statusMessage = "Scanning\u2026 ${event.scannedDirs} folders checked \u2014 ${event.totalImages} images found"
+                    statusMessage = Strings.Status.progress(event.scannedDirs, event.totalImages)
                 }
                 is ScanEvent.ScanComplete -> {
                     state = state.sortAlbums().pruneEmptyAlbums().copy(isScanning = false)
-                    statusMessage = "${state.albums.size} albums, ${event.totalImages} images"
+                    statusMessage = Strings.Status.summary(state.albums.size, event.totalImages)
                     withContext(Dispatchers.IO) {
                         galleryIndex.saveState(state)
                     }
@@ -675,16 +676,16 @@ fun LinGalleryApp(
                     val album = withContext(Dispatchers.IO) { scanSingleDir(event.path) }
                     if (album != null) {
                         state = state.addAlbum(album)
-                        statusMessage = "New album: ${album.name}"
+                        statusMessage = Strings.Status.newAlbum(album.name)
                     }
                 }
                 is FileEvent.AlbumDeleted -> {
                     state = state.removeAlbum(event.path)
-                    statusMessage = "Album removed"
+                    statusMessage = Strings.Status.albumRemoved
                 }
                 is FileEvent.AlbumRenamed -> {
                     state = state.renameAlbum(event.oldPath, event.newPath)
-                    statusMessage = "Album renamed"
+                    statusMessage = Strings.Status.albumRenamed
                 }
                 is FileEvent.ImageCreated -> {
                     state = withContext(Dispatchers.IO) { state.syncAlbum(event.albumPath) }
@@ -763,7 +764,7 @@ fun LinGalleryApp(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            text = AppConst.APP_NAME,
+                                            text = Strings.App.name,
                                             fontSize = 20.sp,
                                             fontWeight = FontWeight.ExtraBold,
                                             color = primary,
@@ -791,7 +792,7 @@ fun LinGalleryApp(
                                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                                     if (state.isScanning) {
                                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                            Text("Scanning\u2026", color = onSurfaceVariant, fontSize = 15.sp)
+                                            Text(Strings.Status.scanningShort, color = onSurfaceVariant, fontSize = 15.sp)
                                         }
                                     } else {
                                         GalleryView(
@@ -853,13 +854,13 @@ fun LinGalleryApp(
                                     ) {
                                         TooltipIconButton(
                                             icon = AppIcons.Crop,
-                                            tooltip = "Crop Mode",
+                                            tooltip = Strings.Crop.mode,
                                             onClick = {},
                                             tint = primary
                                         )
                                         Spacer(Modifier.width(8.dp))
                                         Text(
-                                            text = "Crop Mode",
+                                            text = Strings.Crop.mode,
                                             fontSize = 14.sp,
                                             fontWeight = FontWeight.SemiBold,
                                             color = primary
@@ -871,14 +872,14 @@ fun LinGalleryApp(
                                                 state = state.copy(viewerState = state.viewerState.copy(isCropping = false, cropRect = null))
                                             },
                                             shape = RoundedCornerShape(20.dp)
-                                        ) { Text("Cancel") }
+                                        ) { Text(Strings.Buttons.cancel) }
                                         Spacer(Modifier.width(8.dp))
                                         Button(
                                             onClick = ::doApplyCrop,
                                             enabled = state.viewerState.cropRect != null,
                                             colors = ButtonDefaults.buttonColors(containerColor = primary),
                                             shape = RoundedCornerShape(20.dp)
-                                        ) { Text("Apply") }
+                                        ) { Text(Strings.Buttons.apply) }
                                     }
                                 } else {
                                     Row(
@@ -887,7 +888,7 @@ fun LinGalleryApp(
                                     ) {
                                         TooltipIconButton(
                                             icon = AppIcons.ArrowBack,
-                                            tooltip = "Back to Gallery (Esc)",
+                                            tooltip = Strings.Tooltips.backGallery,
                                             onClick = {
                                                 state = state.copy(screen = Screen.Gallery)
                                                 slideshowActive = false
@@ -903,14 +904,14 @@ fun LinGalleryApp(
                                         )
                                         Spacer(Modifier.width(8.dp))
                                         Text(
-                                            text = "${state.viewerState.currentIndex + 1} / ${state.currentAlbumImages.size}",
+                                            text = Strings.Viewer.counter(state.viewerState.currentIndex + 1, state.currentAlbumImages.size),
                                             fontSize = 12.sp,
                                             color = onSurfaceVariant
                                         )
                                         Spacer(Modifier.weight(1f))
                                         TooltipIconButton(
                                             icon = AppIcons.ZoomOut,
-                                            tooltip = "Zoom out (-)",
+                                            tooltip = Strings.Tooltips.zoomOut,
                                             onClick = ::zoomOut,
                                             tint = onSurface,
                                             preferTooltipAbove = false
@@ -937,7 +938,7 @@ fun LinGalleryApp(
                                         }
                                         TooltipIconButton(
                                             icon = AppIcons.ZoomIn,
-                                            tooltip = "Zoom in (+)",
+                                            tooltip = Strings.Tooltips.zoomIn,
                                             onClick = ::zoomIn,
                                             tint = onSurface,
                                             preferTooltipAbove = false
@@ -945,14 +946,14 @@ fun LinGalleryApp(
                                         Spacer(Modifier.width(8.dp))
                                         TooltipIconButton(
                                             icon = if (slideshowActive) AppIcons.Pause else AppIcons.PlayArrow,
-                                            tooltip = "Slideshow (Space)",
+                                            tooltip = Strings.Tooltips.slideshow,
                                             onClick = ::toggleSlideshow,
                                             tint = if (slideshowActive) primary else onSurface,
                                             preferTooltipAbove = false
                                         )
                                         TooltipIconButton(
                                             icon = if (isFullscreen) AppIcons.FullscreenExit else AppIcons.Fullscreen,
-                                            tooltip = "Fullscreen (F)",
+                                            tooltip = Strings.Tooltips.fullscreen,
                                             onClick = ::toggleFullscreen,
                                             tint = onSurface,
                                             preferTooltipAbove = false
@@ -1030,7 +1031,7 @@ fun LinGalleryApp(
                                 ) {
                                     Icon(
                                         imageVector = AppIcons.FullscreenExit,
-                                        contentDescription = "Exit Fullscreen (Esc)",
+                                        contentDescription = Strings.ContentDesc.exitFullscreen,
                                         tint = onSurface
                                     )
                                 }
@@ -1107,11 +1108,11 @@ fun LinGalleryApp(
                                     state = state.addImage(targetFolder, newImage)
                                     val srcName = image.path.parent?.fileName?.toString() ?: "?"
                                     val dstName = targetFolder.fileName?.toString() ?: "?"
-                                    val title = if (op == "move") "Image moved" else "Image copied"
-                                    val details = "$srcName ⟶ $dstName"
+                                    val title = if (op == "move") Strings.Snackbar.transferTitleMoved else Strings.Snackbar.transferTitleCopied
+                                    val details = Strings.Snackbar.transferDetails(srcName, dstName)
                                     showStructuredSnackbar(title, details)
                                 } else {
-                                    showErrorSnackbar("Operation failed")
+                                    showErrorSnackbar(Strings.Snackbar.operationFailed)
                                 }
                             }
                         }
@@ -1123,10 +1124,10 @@ fun LinGalleryApp(
             if (showInfoDialog && exifData != null) {
                 AlertDialog(
                     onDismissRequest = { showInfoDialog = false },
-                    title = { Text("Details", fontWeight = FontWeight.ExtraBold) },
+                    title = { Text(Strings.Dialogs.details, fontWeight = FontWeight.ExtraBold) },
                     text = {
                         Column {
-                            Text("Filename: ${state.currentImage?.name ?: ""}", fontSize = 12.sp, color = onSurface)
+                            Text(Strings.Labels.filenameColon(state.currentImage?.name ?: ""), fontSize = 12.sp, color = onSurface)
                             Spacer(Modifier.height(8.dp))
                             exifData!!.forEach { (key, value) ->
                                 Row(
@@ -1139,7 +1140,7 @@ fun LinGalleryApp(
                             }
                         }
                     },
-                    confirmButton = { TextButton(onClick = { showInfoDialog = false }) { Text("Close") } }
+                    confirmButton = { TextButton(onClick = { showInfoDialog = false }) { Text(Strings.Buttons.close) } }
                 )
             }
 
@@ -1147,12 +1148,12 @@ fun LinGalleryApp(
             if (showRenameDialog) {
                 AlertDialog(
                     onDismissRequest = { showRenameDialog = false },
-                    title = { Text("Rename Image", fontWeight = FontWeight.ExtraBold) },
+                    title = { Text(Strings.Dialogs.renameImage, fontWeight = FontWeight.ExtraBold) },
                     text = {
                         OutlinedTextField(
                             value = renameText,
                             onValueChange = { renameText = it },
-                            label = { Text("File Name") },
+                            label = { Text(Strings.Labels.filename) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
                             colors = OutlinedTextFieldDefaults.colors(
@@ -1166,10 +1167,10 @@ fun LinGalleryApp(
                             onClick = ::executeRename,
                             colors = ButtonDefaults.buttonColors(containerColor = primary),
                             shape = RoundedCornerShape(20.dp)
-                        ) { Text("Rename") }
+                        ) { Text(Strings.Buttons.rename) }
                     },
                     dismissButton = {
-                        TextButton(onClick = { showRenameDialog = false }) { Text("Cancel") }
+                        TextButton(onClick = { showRenameDialog = false }) { Text(Strings.Buttons.cancel) }
                     }
                 )
             }
@@ -1178,20 +1179,20 @@ fun LinGalleryApp(
             if (showCropDialog) {
                 AlertDialog(
                     onDismissRequest = { showCropDialog = false },
-                    title = { Text("Save Crop", fontWeight = FontWeight.ExtraBold) },
-                    text = { Text("How do you want to save the cropped image?") },
+                    title = { Text(Strings.Dialogs.saveCrop, fontWeight = FontWeight.ExtraBold) },
+                    text = { Text(Strings.Crop.saveQuestion) },
                     confirmButton = {
                         Button(
                             onClick = { executeCrop("copy") },
                             colors = ButtonDefaults.buttonColors(containerColor = primary),
                             shape = RoundedCornerShape(20.dp)
-                        ) { Text("Save as Copy") }
+                        ) { Text(Strings.Buttons.saveCopy) }
                     },
                     dismissButton = {
                         Row {
-                            TextButton(onClick = { showCropDialog = false }) { Text("Cancel") }
+                            TextButton(onClick = { showCropDialog = false }) { Text(Strings.Buttons.cancel) }
                             Spacer(Modifier.width(8.dp))
-                            TextButton(onClick = { executeCrop("overwrite") }) { Text("Overwrite") }
+                            TextButton(onClick = { executeCrop("overwrite") }) { Text(Strings.Buttons.overwrite) }
                         }
                     }
                 )
@@ -1204,17 +1205,17 @@ fun LinGalleryApp(
                         permanentDeleteChecked = false
                         showDeleteConfirm = false
                     },
-                    title = { Text("Delete image") },
+                    title = { Text(Strings.Dialogs.deleteImage) },
                     text = {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             Icon(
                                 imageVector = AppIcons.Delete,
-                                contentDescription = "Delete",
+                                contentDescription = Strings.ContentDesc.delete,
                                 modifier = Modifier.size(64.dp).align(Alignment.CenterHorizontally),
                                 tint = DarkPalette.ERROR
                             )
                             Spacer(Modifier.height(16.dp))
-                            Text("Delete ${state.currentImage?.name ?: ""}?")
+                            Text(Strings.Dialogs.deleteConfirm(state.currentImage?.name ?: ""))
                             Spacer(Modifier.height(8.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(
@@ -1222,19 +1223,19 @@ fun LinGalleryApp(
                                     onCheckedChange = { permanentDeleteChecked = it }
                                 )
                                 Spacer(Modifier.width(4.dp))
-                                Text("Permanently delete (cannot be undone)", fontSize = 13.sp)
+                                Text(Strings.Dialogs.permanentDeleteCheck, fontSize = 13.sp)
                             }
                         }
                     },
                     confirmButton = {
                         Button(onClick = ::confirmDelete, colors = ButtonDefaults.buttonColors(containerColor = DarkPalette.ERROR)) {
-                            Text("Delete")
+                            Text(Strings.Buttons.delete)
                         }
                     },
                     dismissButton = { TextButton(onClick = {
                         permanentDeleteChecked = false
                         showDeleteConfirm = false
-                    }) { Text("Cancel") } }
+                    }) { Text(Strings.Buttons.cancel) } }
                 )
             }
 
@@ -1242,25 +1243,25 @@ fun LinGalleryApp(
             if (showPermanentDeleteWarning) {
                 AlertDialog(
                     onDismissRequest = { showPermanentDeleteWarning = false },
-                    title = { Text("Permanently delete image") },
+                    title = { Text(Strings.Dialogs.permanentlyDelete) },
                     text = {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             Icon(
                                 imageVector = AppIcons.Warning,
-                                contentDescription = "Warning",
+                                contentDescription = Strings.ContentDesc.warning,
                                 modifier = Modifier.size(64.dp).align(Alignment.CenterHorizontally),
                                 tint = DarkPalette.ERROR
                             )
                             Spacer(Modifier.height(16.dp))
-                            Text("You're about to permanently delete ${state.currentImage?.name ?: ""}.\n\nThis action cannot be undone and the file will not be moved to Trash.")
+                            Text(Strings.Dialogs.permanentDeleteWarning(state.currentImage?.name ?: ""))
                         }
                     },
                     confirmButton = {
                         Button(onClick = ::confirmPermanentDelete, colors = ButtonDefaults.buttonColors(containerColor = DarkPalette.ERROR)) {
-                            Text("Delete Permanently")
+                            Text(Strings.Buttons.deletePermanently)
                         }
                     },
-                    dismissButton = { TextButton(onClick = { showPermanentDeleteWarning = false }) { Text("Cancel") } }
+                    dismissButton = { TextButton(onClick = { showPermanentDeleteWarning = false }) { Text(Strings.Buttons.cancel) } }
                 )
             }
 
@@ -1354,7 +1355,7 @@ private fun NavColumnOverlay(
             ) {
                 TooltipIconButton(
                     icon = AppIcons.NavigateBefore,
-                    tooltip = "Previous (\u2190)",
+                    tooltip = Strings.Tooltips.previous,
                     onClick = onPrev,
                     enabled = prevEnabled,
                     tint = onSurface
@@ -1380,7 +1381,7 @@ private fun NavColumnOverlay(
             ) {
                 TooltipIconButton(
                     icon = AppIcons.NavigateNext,
-                    tooltip = "Next (\u2192)",
+                    tooltip = Strings.Tooltips.next,
                     onClick = onNext,
                     enabled = nextEnabled,
                     tint = onSurface

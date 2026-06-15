@@ -13,6 +13,7 @@ import com.sksamuel.scrimage.nio.PngWriter
 import com.sksamuel.scrimage.nio.TiffWriter
 import com.sksamuel.scrimage.webp.WebpWriter
 import com.soufianodev.lingallery.data.GalleryIndex
+import com.soufianodev.lingallery.i18n.Strings
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
@@ -86,7 +87,7 @@ object ImageEditor {
                 val attrs = Files.readAttributes(path, "*")
                 val size = attrs["size"] as? Long ?: 0L
                 val sizeKb = size / 1024.0
-                result["File Size"] = if (sizeKb >= 1024) {
+                result[Strings.Exif.fileSize] = if (sizeKb >= 1024) {
                     "%.2f MB".format(sizeKb / 1024.0)
                 } else {
                     "%.1f KB".format(sizeKb)
@@ -94,7 +95,7 @@ object ImageEditor {
                 val mtime = attrs["lastModifiedTime"] as? FileTime
                 if (mtime != null) {
                     val sdf = SimpleDateFormat("yyyy-MM-dd  HH:mm", Locale.US)
-                    result["Modified"] = sdf.format(Date(mtime.toMillis()))
+                    result[Strings.Exif.modified] = sdf.format(Date(mtime.toMillis()))
                 }
             } catch (_: Exception) { }
 
@@ -108,14 +109,14 @@ object ImageEditor {
                         val w = r.getWidth(0)
                         val h = r.getHeight(0)
                         if (w > 0 && h > 0) {
-                            result["Dimensions"] = "${w} \u00d7 ${h} px"
+                            result[Strings.Exif.dimensions] = "${w} \u00d7 ${h} px"
                         }
-                        result["Format"] = r.formatName
+                        result[Strings.Exif.format] = r.formatName
                         stream.close()
                     }
                 } catch (_: Exception) { }
             } else {
-                result["Format"] = "SVG"
+                result[Strings.Exif.format] = Strings.Exif.svg
             }
 
             if (ext !in setOf("png", "bmp", "svg", "webp")) {
@@ -124,28 +125,28 @@ object ImageEditor {
                     val exifSub = metadata.getFirstDirectoryOfType(ExifSubIFDDirectory::class.java)
                     if (exifSub != null) {
                         val date = exifSub.getString(ExifSubIFDDirectory.TAG_DATETIME_ORIGINAL)
-                        if (date != null) result["Date Taken"] = date
+                        if (date != null) result[Strings.Exif.dateTaken] = date
                         val iso = exifSub.getInteger(ExifSubIFDDirectory.TAG_ISO_EQUIVALENT)
-                        if (iso != null) result["ISO"] = iso.toString()
+                        if (iso != null) result[Strings.Exif.iso] = iso.toString()
                         val aperture = exifSub.getString(ExifSubIFDDirectory.TAG_APERTURE)
-                        if (aperture != null) result["Aperture"] = aperture
+                        if (aperture != null) result[Strings.Exif.aperture] = aperture
                         val shutter = exifSub.getString(ExifSubIFDDirectory.TAG_SHUTTER_SPEED)
-                        if (shutter != null) result["Shutter Speed"] = shutter
+                        if (shutter != null) result[Strings.Exif.shutterSpeed] = shutter
                         val focal = exifSub.getString(ExifSubIFDDirectory.TAG_FOCAL_LENGTH)
-                        if (focal != null) result["Focal Length"] = focal
+                        if (focal != null) result[Strings.Exif.focalLength] = focal
                     }
                     val exifIfd0 = metadata.getFirstDirectoryOfType(ExifIFD0Directory::class.java)
                     if (exifIfd0 != null) {
                         val make = exifIfd0.getString(ExifIFD0Directory.TAG_MAKE)
-                        if (make != null) result["Camera Make"] = make
+                        if (make != null) result[Strings.Exif.cameraMake] = make
                         val model = exifIfd0.getString(ExifIFD0Directory.TAG_MODEL)
-                        if (model != null) result["Camera Model"] = model
+                        if (model != null) result[Strings.Exif.cameraModel] = model
                     }
                     val gps = metadata.getFirstDirectoryOfType(GpsDirectory::class.java)
                     if (gps != null) {
                         val geo = gps.geoLocation
                         if (geo != null) {
-                            result["GPS"] = "${geo.latitude}, ${geo.longitude}"
+                            result[Strings.Exif.gps] = "${geo.latitude}, ${geo.longitude}"
                         }
                     }
                 } catch (_: Exception) { }

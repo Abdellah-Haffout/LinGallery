@@ -36,6 +36,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.soufianodev.lingallery.i18n.Strings
 import com.soufianodev.lingallery.theme.DarkPalette
 
 enum class SnackbarStyle {
@@ -165,7 +166,7 @@ fun LinGallerySnackbar(
                                     ) {
                                         Icon(
                                             imageVector = if (closeIconStyle == CloseIconStyle.FILLED) Icons.Filled.Cancel else Icons.Filled.Close,
-                                            contentDescription = "Dismiss",
+                                            contentDescription = Strings.ContentDesc.dismiss,
                                             tint = borderColor,
                                             modifier = Modifier.size(20.dp)
                                         )
@@ -200,7 +201,7 @@ fun LinGallerySnackbar(
                                     ) {
                                         Icon(
                                             imageVector = if (closeIconStyle == CloseIconStyle.FILLED) Icons.Filled.Cancel else Icons.Filled.Close,
-                                            contentDescription = "Dismiss",
+                                            contentDescription = Strings.ContentDesc.dismiss,
                                             tint = borderColor,
                                             modifier = Modifier.size(20.dp)
                                         )
@@ -256,7 +257,7 @@ fun LinGallerySnackbar(
                                 ) {
                                     Icon(
                                         imageVector = if (closeIconStyle == CloseIconStyle.FILLED) Icons.Filled.Cancel else Icons.Filled.Close,
-                                        contentDescription = "Dismiss",
+                                        contentDescription = Strings.ContentDesc.dismiss,
                                         tint = borderColor,
                                         modifier = Modifier.size(20.dp)
                                     )
@@ -311,7 +312,7 @@ fun LinGallerySnackbar(
                                 ) {
                                     Icon(
                                         imageVector = if (closeIconStyle == CloseIconStyle.FILLED) Icons.Filled.Cancel else Icons.Filled.Close,
-                                        contentDescription = "Dismiss",
+                                        contentDescription = Strings.ContentDesc.dismiss,
                                         tint = borderColor,
                                         modifier = Modifier.size(20.dp)
                                     )

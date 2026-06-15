@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.soufianodev.lingallery.i18n.Strings
 import com.soufianodev.lingallery.data.Album
 import com.soufianodev.lingallery.theme.AppConst
 import com.soufianodev.lingallery.theme.DarkPalette
@@ -59,7 +60,7 @@ fun AlbumPanel(
             contentAlignment = Alignment.CenterStart
         ) {
             Text(
-                text = "Albums",
+                text = Strings.Gallery.albums,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Medium,
                 color = onSurface

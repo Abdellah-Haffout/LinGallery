@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.github.panpf.sketch.AsyncImage
 import com.github.panpf.sketch.request.ComposableImageRequest
+import com.soufianodev.lingallery.i18n.Strings
 import com.soufianodev.lingallery.data.ImageFile
 import com.soufianodev.lingallery.theme.DarkPalette
 import com.soufianodev.lingallery.theme.LightPalette
@@ -56,8 +57,8 @@ fun GalleryView(
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = if (hasAlbums) "Open a folder or select an album to browse images."
-                       else "No albums found. Add a source folder to get started.",
+                text = if (hasAlbums) Strings.Gallery.empty
+                       else Strings.Gallery.noAlbums,
                 fontSize = 15.sp,
                 color = onSurfaceVariant
             )

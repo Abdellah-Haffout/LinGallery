@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.soufianodev.lingallery.i18n.Strings
 import com.soufianodev.lingallery.theme.AppIcons
 import com.soufianodev.lingallery.ui.components.TooltipIconButton
 
@@ -39,7 +40,7 @@ fun FloatingZoomControl(
         ) {
             TooltipIconButton(
                 icon = AppIcons.ZoomOut,
-                tooltip = "Zoom Out (-)",
+                tooltip = Strings.Tooltips.zoomOutCaps,
                 onClick = onZoomOut,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -63,7 +64,7 @@ fun FloatingZoomControl(
             Spacer(Modifier.width(2.dp))
             TooltipIconButton(
                 icon = AppIcons.ZoomIn,
-                tooltip = "Zoom In (+)",
+                tooltip = Strings.Tooltips.zoomInCaps,
                 onClick = onZoomIn,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )

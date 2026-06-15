@@ -16,6 +16,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.soufianodev.lingallery.i18n.Strings
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -41,7 +42,7 @@ fun FilePickerDialog(
                 errorMessage = null
             }
         } catch (_: Exception) {
-            errorMessage = "Unable to read directory"
+            errorMessage = Strings.FilePicker.error
         }
     }
 
@@ -70,7 +71,7 @@ fun FilePickerDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "Select Folder",
+                        Strings.FilePicker.title,
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -86,7 +87,7 @@ fun FilePickerDialog(
                         IconButton(onClick = { currentPath = currentPath.parent }) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Up",
+                                contentDescription = Strings.ContentDesc.up,
                                 tint = MaterialTheme.colorScheme.onSurface
                             )
                         }
@@ -142,7 +143,7 @@ fun FilePickerDialog(
                     horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(onClick = onDismiss) {
-                        Text("Cancel")
+                        Text(Strings.Buttons.cancel)
                     }
                     Spacer(Modifier.width(8.dp))
                     Button(
@@ -151,7 +152,7 @@ fun FilePickerDialog(
                             containerColor = MaterialTheme.colorScheme.primary
                         )
                     ) {
-                        Text("Select Folder")
+                        Text(Strings.Buttons.selectFolder)
                     }
                 }
             }
