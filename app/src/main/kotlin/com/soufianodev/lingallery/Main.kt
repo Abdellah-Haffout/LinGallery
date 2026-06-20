@@ -48,7 +48,6 @@ import com.soufianodev.lingallery.ui.components.stablePointerHoverIcon
 import com.soufianodev.lingallery.theme.DarkPalette
 import com.soufianodev.lingallery.theme.LightPalette
 import com.soufianodev.lingallery.theme.LinGalleryTheme
-import com.soufianodev.lingallery.ui.components.FilePickerDialog
 import com.soufianodev.lingallery.ui.gallery.AlbumPanel
 import com.soufianodev.lingallery.ui.gallery.GalleryView
 import com.soufianodev.lingallery.ui.viewer.EditToolbar
@@ -63,8 +62,15 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.nio.file.attribute.FileTime
-
+import io.github.vinceglb.filekit.FileKit
+import io.github.vinceglb.filekit.PlatformFile
+import io.github.vinceglb.filekit.atomicMove
+import io.github.vinceglb.filekit.copyTo
+import io.github.vinceglb.filekit.path
+import io.github.vinceglb.filekit.dialogs.FileKitDialogSettings
+import io.github.vinceglb.filekit.dialogs.openDirectoryPicker
 fun main() = application {
+    FileKit.init(appId = "com.soufianodev.lingallery")
     System.setProperty("jdk.nio.file.WatchService.maxEventsPerPoll", "16384")
 
     SingletonSketch.setSafe {
@@ -110,7 +116,6 @@ fun LinGalleryApp(
     initialScanRoots: List<Path>
 ) {
     var state by remember { mutableStateOf(GalleryState()) }
-    var showFilePicker by remember { mutableStateOf(false) }
     var showInfoDialog by remember { mutableStateOf(false) }
     var exifData by remember { mutableStateOf<Map<String, String>?>(null) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -206,6 +211,54 @@ fun LinGalleryApp(
             counter++
         }
         return parent.resolve("$stem (${System.currentTimeMillis()})$ext")
+    }
+
+    fun launchDirectoryPicker(op: String) {
+        pendingFileOp = op
+        scope.launch {
+            val directory = FileKit.openDirectoryPicker(
+                dialogSettings = FileKitDialogSettings(
+                    parentWindow = awtWindow,
+                    title = Strings.Dialogs.selectFolder
+                )
+            )
+            if (directory != null) {
+                val currentOp = pendingFileOp
+                pendingFileOp = ""
+                if (currentOp == "move" || currentOp == "copy") {
+                    val image = state.currentImage
+                    if (image != null) {
+                        val targetFolder = Paths.get(directory.path)
+                        val result = withContext(Dispatchers.IO) {
+                            try {
+                                val destPath = uniqueDestination(targetFolder.resolve(image.name))
+                                val srcFile = PlatformFile(image.path.toFile())
+                                val dstFile = PlatformFile(destPath.toFile())
+                                if (currentOp == "move") srcFile.atomicMove(dstFile)
+                                else srcFile.copyTo(dstFile)
+                                val imgInfo = readImageFileInfo(destPath)
+                                destPath to imgInfo
+                            } catch (_: Exception) { null to null }
+                        }
+                        val (dest, newImage) = result
+                        if (dest != null && newImage != null) {
+                            if (currentOp == "move") {
+                                state = state.removeImage(image.path.parent, image.path)
+                                state = state.copy(screen = Screen.Gallery)
+                            }
+                            state = state.addImage(targetFolder, newImage)
+                            val srcName = image.path.parent?.fileName?.toString() ?: "?"
+                            val dstName = targetFolder.fileName?.toString() ?: "?"
+                            val title = if (currentOp == "move") Strings.Snackbar.transferTitleMoved else Strings.Snackbar.transferTitleCopied
+                            val details = Strings.Snackbar.transferDetails(srcName, dstName)
+                            showStructuredSnackbar(title, details)
+                        } else {
+                            showErrorSnackbar(Strings.Snackbar.operationFailed)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fun refreshCurrentImageFile() {
@@ -710,7 +763,7 @@ fun LinGalleryApp(
     }
 
     val anyDialogOpen = showInfoDialog || showDeleteConfirm || showRenameDialog
-            || showCropDialog || showFilePicker || showPermanentDeleteWarning
+            || showCropDialog || showPermanentDeleteWarning
 
     LaunchedEffect(anyDialogOpen, isFullscreen) {
         if (state.screen is Screen.Viewer && !anyDialogOpen) {
@@ -1064,8 +1117,8 @@ fun LinGalleryApp(
                                 onCopyClipboard = ::copyImageToClipboard,
                                 onCopyName = ::copyImageNameToClipboard,
                                 onCopyPath = ::copyToClipboard,
-                                onMove = { pendingFileOp = "move"; showFilePicker = true },
-                                onCopyFile = { pendingFileOp = "copy"; showFilePicker = true },
+                                onMove = { launchDirectoryPicker("move") },
+                                onCopyFile = { launchDirectoryPicker("copy") },
                                 onRename = ::showRenameDialog,
                                 onInfo = ::showExifInfo,
                                 onDelete = ::deleteCurrentImage,
@@ -1074,50 +1127,6 @@ fun LinGalleryApp(
                         }
                     }
                 }
-            }
-
-            // File picker dialog
-            if (showFilePicker) {
-                FilePickerDialog(
-                    onDismiss = {
-                        showFilePicker = false
-                        pendingFileOp = ""
-                    },
-                    onFolderSelected = { targetFolder ->
-                        showFilePicker = false
-                        val op = pendingFileOp
-                        pendingFileOp = ""
-                        if (op == "move" || op == "copy") {
-                            val image = state.currentImage ?: return@FilePickerDialog
-                            scope.launch {
-                                val result = withContext(Dispatchers.IO) {
-                                    try {
-                                        val destPath = uniqueDestination(targetFolder.resolve(image.name))
-                                        if (op == "move") Files.move(image.path, destPath)
-                                        else Files.copy(image.path, destPath)
-                                        val imgInfo = readImageFileInfo(destPath)
-                                        destPath to imgInfo
-                                    } catch (_: Exception) { null to null }
-                                }
-                                val (dest, newImage) = result
-                                if (dest != null && newImage != null) {
-                                    if (op == "move") {
-                                        state = state.removeImage(image.path.parent, image.path)
-                                        state = state.copy(screen = Screen.Gallery)
-                                    }
-                                    state = state.addImage(targetFolder, newImage)
-                                    val srcName = image.path.parent?.fileName?.toString() ?: "?"
-                                    val dstName = targetFolder.fileName?.toString() ?: "?"
-                                    val title = if (op == "move") Strings.Snackbar.transferTitleMoved else Strings.Snackbar.transferTitleCopied
-                                    val details = Strings.Snackbar.transferDetails(srcName, dstName)
-                                    showStructuredSnackbar(title, details)
-                                } else {
-                                    showErrorSnackbar(Strings.Snackbar.operationFailed)
-                                }
-                            }
-                        }
-                    }
-                )
             }
 
             // EXIF info dialog

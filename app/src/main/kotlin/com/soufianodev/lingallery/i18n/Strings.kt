@@ -51,6 +51,7 @@ object Strings {
         fun permanentDeleteWarning(name: String) = Strings.fmt("dialog.permanently.delete.warning", name)
         val permanentDeleteCheck get() = Strings["dialog.permanently.delete.check"]
         fun deleteConfirm(name: String) = Strings.fmt("dialog.delete.confirm", name)
+        val selectFolder get() = Strings["dialog.select.folder"]
     }
 
     object Labels {
@@ -95,7 +96,6 @@ object Strings {
         val delete get() = Strings["button.delete"]
         val deletePermanently get() = Strings["button.delete.permanently"]
         val close get() = Strings["button.close"]
-        val selectFolder get() = Strings["button.select.folder"]
         val undo get() = Strings["button.undo"]
     }
 
@@ -129,17 +129,11 @@ object Strings {
         val copyFolder get() = Strings["menu.copy.folder"]
     }
 
-    object FilePicker {
-        val title get() = Strings["filepicker.title"]
-        val error get() = Strings["filepicker.error"]
-    }
-
     object ContentDesc {
         val dismiss get() = Strings["contentdesc.dismiss"]
         val exitFullscreen get() = Strings["contentdesc.exit.fullscreen"]
         val delete get() = Strings["contentdesc.delete"]
         val warning get() = Strings["contentdesc.warning"]
-        val up get() = Strings["contentdesc.up"]
     }
 
     object Exif {

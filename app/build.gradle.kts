@@ -11,13 +11,14 @@ repositories {
 }
 
 val sketchVersion = "4.4.0-beta02"
+val skikoVersion = "0.144.6"
 
 configurations.all {
     resolutionStrategy {
         force(
-            "org.jetbrains.skiko:skiko:0.9.4",
-            "org.jetbrains.skiko:skiko-awt:0.9.4",
-            "org.jetbrains.skiko:skiko-awt-runtime-linux-x64:0.9.4",
+            "org.jetbrains.skiko:skiko:$skikoVersion",
+            "org.jetbrains.skiko:skiko-awt:$skikoVersion",
+            "org.jetbrains.skiko:skiko-awt-runtime-linux-x64:$skikoVersion",
         )
     }
 }
@@ -49,11 +50,20 @@ dependencies {
 
     // SQLite for persistent gallery index cache
     implementation("org.xerial:sqlite-jdbc:3.49.1.0")
+
+    // FileKit — native file/directory picker and cross-platform file operations
+    implementation("io.github.vinceglb:filekit-core:0.14.2")
+    implementation("io.github.vinceglb:filekit-dialogs-compose:0.14.2")
 }
 
 compose.desktop {
     application {
         mainClass = "com.soufianodev.lingallery.MainKt"
+        nativeDistributions {
+            linux {
+                modules("jdk.security.auth")
+            }
+        }
         jvmArgs += listOf(
             "-Dskiko.renderApi=OPENGL",
             "-Dskiko.gpu.resourceCacheLimit=128M",
