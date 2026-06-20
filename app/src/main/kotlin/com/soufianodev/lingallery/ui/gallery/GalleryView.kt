@@ -23,6 +23,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.github.panpf.sketch.AsyncImage
 import com.github.panpf.sketch.request.ComposableImageRequest
+import com.github.panpf.sketch.resize.Precision
+import com.github.panpf.sketch.resize.Scale
 import com.soufianodev.lingallery.i18n.Strings
 import com.soufianodev.lingallery.data.ImageFile
 import com.soufianodev.lingallery.theme.DarkPalette
@@ -35,6 +37,7 @@ fun GalleryView(
     onImageDoubleClicked: (Int) -> Unit,
     isDark: Boolean,
     hasAlbums: Boolean = true,
+    isPhoneAlbum: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val surfaceContainer = if (isDark) DarkPalette.SURFACE_CONTAINER else LightPalette.SURFACE_CONTAINER
@@ -92,8 +95,12 @@ fun GalleryView(
                                 .padding(4.dp)
                                 .clickable { onImageClicked(index) }
                         ) {
+                            val requestUri = (image.thumbnailPath ?: image.path).toUri().toString() + "?t=${image.lastModified}"
                             AsyncImage(
-                                request = ComposableImageRequest(image.path.toUri().toString() + "?t=${image.lastModified}") {
+                                request = ComposableImageRequest(requestUri) {
+                                    if (isPhoneAlbum && image.thumbnailPath == null) {
+                                        resize(256, 256, Precision.SAME_ASPECT_RATIO, Scale.END_CROP)
+                                    }
                                     crossfade()
                                 },
                                 contentDescription = image.name,

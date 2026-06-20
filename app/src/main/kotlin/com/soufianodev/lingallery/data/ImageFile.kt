@@ -7,5 +7,6 @@ data class ImageFile(
     val name: String,
     val extension: String,
     val size: Long,
-    val lastModified: Long
+    val lastModified: Long,
+    val thumbnailPath: Path? = null
 )

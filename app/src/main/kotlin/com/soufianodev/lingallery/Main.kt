@@ -36,6 +36,12 @@ import com.soufianodev.lingallery.data.*
 import com.soufianodev.lingallery.data.FileIndexer
 import com.soufianodev.lingallery.data.GalleryIndex
 import com.soufianodev.lingallery.data.ScanEvent
+import com.soufianodev.lingallery.device.GvfsPhoneDetector
+import com.soufianodev.lingallery.device.PhoneAlbumManager
+import com.soufianodev.lingallery.device.PhoneEvent
+import com.soufianodev.lingallery.device.PhoneScanEvent
+import com.soufianodev.lingallery.device.PhoneScanProgress
+import com.soufianodev.lingallery.device.PhoneThumbnailCache
 import com.soufianodev.lingallery.processing.ImageEditor
 import com.soufianodev.lingallery.i18n.Strings
 import com.soufianodev.lingallery.theme.AppConst
@@ -129,6 +135,9 @@ fun LinGalleryApp(
     var isFullscreen by remember { mutableStateOf(false) }
     var savedWindowBounds by remember { mutableStateOf<java.awt.Rectangle?>(null) }
     val scope = rememberCoroutineScope()
+    val phoneThumbnailCache = remember { PhoneThumbnailCache() }
+    val phoneAlbumManager = remember { PhoneAlbumManager(phoneThumbnailCache) }
+    val phoneDetector = remember { GvfsPhoneDetector() }
     val focusRequester = remember { FocusRequester() }
     val snackbarHostState = remember { SnackbarHostState() }
     var snackbarIsError by remember { mutableStateOf(false) }
@@ -756,6 +765,100 @@ fun LinGalleryApp(
         }
     }
 
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) { phoneThumbnailCache.cleanupOnStartup() }
+    }
+
+    LaunchedEffect(Unit) {
+        delay(200)
+        try {
+            phoneDetector.observe().collect { event ->
+                when (event) {
+                    is PhoneEvent.Connected -> {
+                        val phone = event.phone
+                        try {
+                            phoneAlbumManager.onPhoneConnected(phone, this).collect { scanEvent ->
+                                when (scanEvent) {
+                                    is PhoneScanEvent.AlbumCreated -> {
+                                        state = state.addAlbum(Album(
+                                            path = scanEvent.mountPath,
+                                            name = scanEvent.phoneName,
+                                            images = emptyList(),
+                                            previewPath = null,
+                                            isPhoneAlbum = true
+                                        ))
+                                    }
+                                    is PhoneScanEvent.Progress -> {
+                                        state = state.updatePhoneScanProgress(phone.id, PhoneScanProgress(
+                                            phoneName = phone.name,
+                                            imagesDiscovered = scanEvent.imagesDiscovered,
+                                            isScanning = true
+                                        ))
+                                    }
+                                    is PhoneScanEvent.ImagesFound -> {
+                                        val mountPath = phone.mountPath
+                                        val existingIdx = state.albums.indexOfFirst { it.path == mountPath }
+                                        if (existingIdx < 0) {
+                                            state = state.addAlbum(Album(
+                                                path = mountPath,
+                                                name = phone.name,
+                                                images = scanEvent.images,
+                                                previewPath = scanEvent.images.firstOrNull()?.path,
+                                                isPhoneAlbum = true
+                                            ))
+                                        } else {
+                                            state = state.appendPhoneImages(mountPath, scanEvent.images)
+                                        }
+                                    }
+                                    is PhoneScanEvent.Complete -> {
+                                        state = state.removePhoneScanProgress(phone.id).sortAlbums()
+                                        statusMessage = Strings.Status.phoneConnected(phone.name, scanEvent.totalImages)
+                                        val snapshot = phoneAlbumManager.getImageSnapshot(phone.id)
+                                        if (snapshot != null) {
+                                            phoneAlbumManager.enrichMetadataAsync(snapshot, this) { batch ->
+                                                state = state.updatePhoneImageMetadata(phone.mountPath, batch)
+                                            }.invokeOnCompletion {
+                                                val currentPath = state.currentAlbum?.path
+                                                if (currentPath == phone.mountPath) {
+                                                    state = state.markPendingPhoneSort(phone.mountPath)
+                                                } else {
+                                                    state = state.sortPhoneByRecent(phone.mountPath)
+                                                }
+                                            }
+                                            phoneThumbnailCache.generateThumbnails(
+                                                phone.id, snapshot, this
+                                            ) { updatedImage ->
+                                                state = state.updatePhoneImageThumbnail(
+                                                    phone.mountPath, updatedImage.path, updatedImage.thumbnailPath!!
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            println("[Phone] Scan failed for ${phone.name}: ${e.message}")
+                        }
+                    }
+                    is PhoneEvent.Disconnected -> {
+                        val name = phoneAlbumManager.getPhoneName(event.phoneId)
+                        val mountPath = phoneAlbumManager.onPhoneDisconnected(event.phoneId)
+                        if (mountPath != null) {
+                            val wasViewingPhoneAlbum = state.currentAlbum?.isPhoneAlbum == true
+                            state = state.removeAlbum(mountPath)
+                            if (wasViewingPhoneAlbum) {
+                                state = state.copy(currentAlbumIndex = 0)
+                            }
+                            statusMessage = Strings.Status.phoneDisconnected(name ?: "Phone")
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            println("[Phone] Detection failed: ${e.message}")
+        }
+    }
+
     LaunchedEffect(state.screen, isFullscreen) {
         if (state.screen is Screen.Viewer) {
             focusRequester.requestFocus()
@@ -795,9 +898,18 @@ fun LinGalleryApp(
                                 albums = state.albums,
                                 currentAlbumIndex = state.currentAlbumIndex,
                                 onAlbumSelected = { index ->
+                                    val prevAlbum = state.currentAlbum
                                     state = state.copy(currentAlbumIndex = index)
+                                    if (prevAlbum?.isPhoneAlbum == true) {
+                                        SingletonSketch.get(PlatformContext.INSTANCE).memoryCache.clear()
+                                        org.jetbrains.skia.Graphics.purgeResourceCache()
+                                        if (prevAlbum.path in state.pendingPhoneSort) {
+                                            state = state.sortPhoneByRecent(prevAlbum.path)
+                                        }
+                                    }
                                 },
-                                isDark = isDark
+                                isDark = isDark,
+                                phoneScanProgress = state.phoneScanProgress
                             )
 
                             Box(
@@ -853,7 +965,8 @@ fun LinGalleryApp(
                                             onImageClicked = { index -> loadViewerImage(index) },
                                             onImageDoubleClicked = { index -> loadViewerImage(index) },
                                             isDark = isDark,
-                                            hasAlbums = state.albums.isNotEmpty()
+                                            hasAlbums = state.albums.isNotEmpty(),
+                                            isPhoneAlbum = state.currentAlbum?.isPhoneAlbum == true
                                         )
                                     }
                                 }

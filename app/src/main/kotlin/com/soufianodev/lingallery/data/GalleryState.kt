@@ -1,5 +1,6 @@
 package com.soufianodev.lingallery.data
 
+import com.soufianodev.lingallery.device.PhoneScanProgress
 import com.soufianodev.lingallery.theme.AppConst
 import java.nio.file.Files
 import java.nio.file.Path
@@ -53,6 +54,8 @@ data class GalleryState(
     val isSlideshowActive: Boolean = false,
     val isDarkTheme: Boolean = true,
     val deletionRecord: DeletionRecord? = null,
+    val phoneScanProgress: Map<String, PhoneScanProgress> = emptyMap(),
+    val pendingPhoneSort: Set<Path> = emptySet(),
 ) {
     val currentAlbum: Album?
         get() = albums.getOrNull(currentAlbumIndex)
@@ -67,14 +70,15 @@ data class GalleryState(
 
     private val PRIORITY_NAMES = listOf("desktop", "camera", "pictures", "downloads", "screenshots")
 
-    private fun sortKey(name: String): Pair<Int, String> {
+    private fun sortKey(name: String, isPhone: Boolean = false): Pair<Int, String> {
+        if (isPhone) return Pair(-1, "")
         val idx = PRIORITY_NAMES.indexOf(name.lowercase())
         return if (idx >= 0) Pair(idx, "") else Pair(PRIORITY_NAMES.size, name.lowercase())
     }
 
     private fun albumCompare(a: Album, b: Album): Int {
-        val (pa, sa) = sortKey(a.name)
-        val (pb, sb) = sortKey(b.name)
+        val (pa, sa) = sortKey(a.name, a.isPhoneAlbum)
+        val (pb, sb) = sortKey(b.name, b.isPhoneAlbum)
         return pa.compareTo(pb).let { if (it != 0) it else sa.compareTo(sb) }
     }
 
@@ -90,7 +94,7 @@ data class GalleryState(
     }
 
     fun pruneEmptyAlbums(): GalleryState {
-        val nonEmpty = albums.filter { it.images.isNotEmpty() }
+        val nonEmpty = albums.filter { it.images.isNotEmpty() || it.isPhoneAlbum }
         if (nonEmpty.size == albums.size) return this
         val newIndex = currentAlbumIndex.coerceIn(0, nonEmpty.size - 1)
         return copy(albums = nonEmpty, currentAlbumIndex = newIndex)
@@ -223,6 +227,78 @@ data class GalleryState(
             currentAlbumIndex = newIndex,
             screen = newScreen
         )
+    }
+
+    fun updatePhoneScanProgress(phoneId: String, progress: PhoneScanProgress): GalleryState {
+        return copy(phoneScanProgress = phoneScanProgress + (phoneId to progress))
+    }
+
+    fun removePhoneScanProgress(phoneId: String): GalleryState {
+        return copy(phoneScanProgress = phoneScanProgress - phoneId)
+    }
+
+    fun markPendingPhoneSort(albumPath: Path): GalleryState =
+        copy(pendingPhoneSort = pendingPhoneSort + albumPath)
+
+    fun clearPendingPhoneSort(albumPath: Path): GalleryState =
+        copy(pendingPhoneSort = pendingPhoneSort - albumPath)
+
+    fun appendPhoneImages(albumPath: Path, newImages: List<ImageFile>): GalleryState {
+        val idx = albums.indexOfFirst { it.path == albumPath }
+        if (idx < 0) return this
+        val album = albums[idx]
+        val combined = if (album.isPhoneAlbum) {
+            (album.images + newImages)
+                .distinctBy { it.path }
+                .sortedByDescending { it.lastModified }
+        } else {
+            (album.images + newImages)
+                .distinctBy { it.path }
+                .sortedByDescending { it.lastModified }
+        }
+        val newPreview = combined.firstOrNull()?.path ?: album.previewPath
+        val newAlbums = albums.toMutableList()
+        newAlbums[idx] = album.copy(images = combined, previewPath = newPreview)
+        return copy(albums = newAlbums)
+    }
+
+    fun sortPhoneByRecent(albumPath: Path): GalleryState {
+        val idx = albums.indexOfFirst { it.path == albumPath }
+        if (idx < 0) return this
+        val album = albums[idx]
+        if (!album.isPhoneAlbum) return this
+        val sorted = album.images
+            .sortedByDescending { it.lastModified }
+            .distinctBy { it.path }
+        val preview = sorted.firstOrNull()?.path ?: album.previewPath
+        val newAlbums = albums.toMutableList()
+        newAlbums[idx] = album.copy(images = sorted, previewPath = preview)
+        return copy(albums = newAlbums, pendingPhoneSort = pendingPhoneSort - albumPath)
+    }
+
+    fun updatePhoneImageMetadata(albumPath: Path, enriched: List<ImageFile>): GalleryState {
+        val idx = albums.indexOfFirst { it.path == albumPath }
+        if (idx < 0) return this
+        val album = albums[idx]
+        val updateMap = enriched.associateBy { it.path }
+        val newImages = album.images.map { updateMap[it.path] ?: it }
+        val newAlbums = albums.toMutableList()
+        newAlbums[idx] = album.copy(images = newImages)
+        return copy(albums = newAlbums)
+    }
+
+    fun updatePhoneImageThumbnail(albumPath: Path, imagePath: Path, thumbnailPath: Path): GalleryState {
+        val idx = albums.indexOfFirst { it.path == albumPath }
+        if (idx < 0) return this
+        val album = albums[idx]
+        val imgIdx = album.images.indexOfFirst { it.path == imagePath }
+        if (imgIdx < 0) return this
+        val updatedImage = album.images[imgIdx].copy(thumbnailPath = thumbnailPath)
+        val newImages = album.images.toMutableList()
+        newImages[imgIdx] = updatedImage
+        val newAlbums = albums.toMutableList()
+        newAlbums[idx] = album.copy(images = newImages)
+        return copy(albums = newAlbums)
     }
 
     fun modifyImage(albumPath: Path, imagePath: Path, updatedImage: ImageFile): GalleryState {

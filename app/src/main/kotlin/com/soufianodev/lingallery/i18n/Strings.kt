@@ -24,6 +24,8 @@ object Strings {
         fun newAlbum(name: String) = Strings.fmt("status.new.album", name)
         val albumRemoved get() = Strings["status.album.removed"]
         val albumRenamed get() = Strings["status.album.renamed"]
+        fun phoneConnected(name: String, count: Int) = Strings.fmt("status.phone.connected", name, count)
+        fun phoneDisconnected(name: String) = Strings.fmt("status.phone.disconnected", name)
     }
 
     object Gallery {

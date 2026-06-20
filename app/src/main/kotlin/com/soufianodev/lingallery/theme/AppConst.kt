@@ -1,5 +1,7 @@
 package com.soufianodev.lingallery.theme
 
+import java.nio.file.Path
+
 object AppConst {
     const val APP_VERSION = "1.0.0"
     val DEFAULT_SCAN_ROOTS = listOf("~/Pictures", "~/Downloads", "~/Desktop")
@@ -24,4 +26,7 @@ object AppConst {
 
     const val THEME_DARK = "dark"
     const val THEME_LIGHT = "light"
+
+    val PHONE_THUMBNAIL_DIR: Path get() =
+        Path.of(System.getProperty("user.home"), ".cache", "lingallery", "phone-thumbnails")
 }

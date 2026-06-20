@@ -23,9 +23,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.soufianodev.lingallery.device.PhoneScanProgress
 import com.soufianodev.lingallery.i18n.Strings
 import com.soufianodev.lingallery.data.Album
 import com.soufianodev.lingallery.theme.AppConst
+import com.soufianodev.lingallery.theme.AppIcons
 import com.soufianodev.lingallery.theme.DarkPalette
 import com.soufianodev.lingallery.theme.LightPalette
 
@@ -35,6 +37,7 @@ fun AlbumPanel(
     currentAlbumIndex: Int,
     onAlbumSelected: (Int) -> Unit,
     isDark: Boolean,
+    phoneScanProgress: Map<String, PhoneScanProgress> = emptyMap(),
     modifier: Modifier = Modifier
 ) {
     val surface = if (isDark) DarkPalette.SURFACE else LightPalette.SURFACE
@@ -104,8 +107,17 @@ fun AlbumPanel(
                             .padding(start = 16.dp, end = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        if (album.isPhoneAlbum) {
+                            Icon(
+                                imageVector = AppIcons.Smartphone,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = textColor
+                            )
+                            Spacer(Modifier.width(6.dp))
+                        }
                         Text(
-                            text = "${album.name}  (${album.imageCount})",
+                            text = "${album.name} (${album.imageCount})",
                             fontSize = 14.sp,
                             fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                             color = textColor,
@@ -113,6 +125,16 @@ fun AlbumPanel(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
                         )
+                        val isScanning = album.isPhoneAlbum &&
+                            phoneScanProgress.values.any { it.isScanning }
+                        if (isScanning) {
+                            Spacer(Modifier.width(6.dp))
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 2.dp,
+                                color = primary
+                            )
+                        }
                     }
                 }
             }
