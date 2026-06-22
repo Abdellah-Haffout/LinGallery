@@ -56,6 +56,49 @@ dependencies {
     implementation("io.github.vinceglb:filekit-dialogs-compose:0.14.2")
 }
 
+val nativeDir = file("../native")
+val nativeLibFile = File(nativeDir, "target/release/liblingallery_native.so")
+
+val compileRust = tasks.register("compileRust") {
+    inputs.dir(File(nativeDir, "src"))
+    inputs.file(File(nativeDir, "Cargo.toml"))
+    outputs.file(nativeLibFile)
+
+    doLast {
+        val isCargoInstalled = try {
+            val process = ProcessBuilder("cargo", "--version")
+                .redirectErrorStream(true)
+                .start()
+            process.waitFor() == 0
+        } catch (_: Exception) {
+            false
+        }
+
+        if (isCargoInstalled) {
+            logger.lifecycle("Building native Rust scanner library...")
+            val process = ProcessBuilder("cargo", "build", "--release")
+                .directory(nativeDir)
+                .inheritIO()
+                .start()
+            val exitCode = process.waitFor()
+            if (exitCode != 0) {
+                throw GradleException("Cargo build failed with exit code $exitCode")
+            }
+            if (!nativeLibFile.exists()) {
+                throw GradleException("Expected native library not found at: ${nativeLibFile.absolutePath}")
+            }
+            logger.lifecycle("Native library built: ${nativeLibFile.absolutePath}")
+        } else {
+            logger.warn("WARNING: Cargo (Rust toolchain) not found. Skipping native compilation.")
+            logger.warn("The application will fall back to the pure Kotlin scanner at runtime.")
+        }
+    }
+}
+
+tasks.named("classes") {
+    dependsOn(compileRust)
+}
+
 compose.desktop {
     application {
         mainClass = "com.soufianodev.lingallery.MainKt"
@@ -68,7 +111,8 @@ compose.desktop {
             "-Dskiko.renderApi=OPENGL",
             "-Dskiko.gpu.resourceCacheLimit=128M",
             "-Dsun.awt.enableExtraMouseButtons=false",
-            "-Xss512k"
+            "-Xss512k",
+            "-Dlingallery.native.lib=${nativeLibFile.absolutePath}"
         )
     }
 }

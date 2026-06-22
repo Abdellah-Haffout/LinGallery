@@ -66,6 +66,34 @@ class FileIndexer(
         roots: List<Path>,
         currentAlbumPath: Path? = null
     ): Flow<ScanEvent> = flow {
+        // ── Try native Rust scanner first ───────────────────────────
+        if (NativeScanner.isAvailable) {
+            try {
+                val albums = NativeScanner.scanToAlbums(roots, currentAlbumPath)
+                var totalImages = 0
+                var scannedDirs = 0
+
+                for (album in albums) {
+                    scannedDirs++
+                    totalImages += album.images.size
+                    emit(ScanEvent.AlbumFound(album))
+                    if (scannedDirs % 10 == 0) {
+                        emit(ScanEvent.ProgressUpdate(scannedDirs, totalImages))
+                    }
+                }
+
+                emit(ScanEvent.ProgressUpdate(scannedDirs, totalImages))
+                emit(ScanEvent.ScanComplete(totalImages))
+                println("[LinGallery] Native scan complete: $scannedDirs albums, $totalImages images")
+                return@flow
+            } catch (e: Exception) {
+                System.err.println("[LinGallery] Native scan failed, falling back to Kotlin scanner: ${e.message}")
+            }
+        } else {
+            println("[LinGallery] Native scanner not available, using Kotlin scanner")
+        }
+
+        // ── Fallback: Pure Kotlin BFS scanner ───────────────────────
         val dirQueue = LinkedList<Path>()
         for (root in roots) {
             if (Files.exists(root)) {
