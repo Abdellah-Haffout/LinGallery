@@ -1,5 +1,5 @@
 plugins {
-    kotlin("jvm") version "2.4.0" apply false
-    id("org.jetbrains.kotlin.plugin.compose") version "2.4.0" apply false
-    id("org.jetbrains.compose") version "1.11.1" apply false
+    alias(libs.plugins.composeMultiplatform) apply false
+    alias(libs.plugins.composeCompiler) apply false
+    alias(libs.plugins.kotlinJvm) apply false
 }

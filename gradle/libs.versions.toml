@@ -1,0 +1,37 @@
+[versions]
+composeMultiplatform = "1.11.1"
+junit = "4.13.2"
+kotlin = "2.4.0"
+kotlinx-coroutines = "1.11.0"
+material3 = "1.11.0-alpha07"
+sketch = "4.4.0-beta02"
+metadataExtractor = "2.18.0"
+scrimage = "4.3.5"
+sqliteJdbc = "3.49.1.0"
+filekit = "0.14.2"
+
+[libraries]
+kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
+kotlin-testJunit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
+junit = { module = "junit:junit", version.ref = "junit" }
+compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "composeMultiplatform" }
+compose-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "composeMultiplatform" }
+compose-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "material3" }
+compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "composeMultiplatform" }
+compose-uiToolingPreview = { module = "org.jetbrains.compose.ui:ui-tooling-preview", version.ref = "composeMultiplatform" }
+kotlinx-coroutinesSwing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
+sketch-compose = { module = "io.github.panpf.sketch4:sketch-compose", version.ref = "sketch" }
+sketch-svg = { module = "io.github.panpf.sketch4:sketch-svg", version.ref = "sketch" }
+sketch-gif = { module = "io.github.panpf.sketch4:sketch-animated-gif", version.ref = "sketch" }
+metadata-extractor = { module = "com.drewnoakes:metadata-extractor", version.ref = "metadataExtractor" }
+scrimage-core = { module = "com.sksamuel.scrimage:scrimage-core", version.ref = "scrimage" }
+scrimage-webp = { module = "com.sksamuel.scrimage:scrimage-webp", version.ref = "scrimage" }
+scrimage-extra = { module = "com.sksamuel.scrimage:scrimage-formats-extra", version.ref = "scrimage" }
+sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqliteJdbc" }
+filekit-core = { module = "io.github.vinceglb:filekit-core", version.ref = "filekit" }
+filekit-dialogs = { module = "io.github.vinceglb:filekit-dialogs-compose", version.ref = "filekit" }
+
+[plugins]
+composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
+composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

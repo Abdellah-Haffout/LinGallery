@@ -1,69 +1,57 @@
 plugins {
-    kotlin("jvm")
-    id("org.jetbrains.kotlin.plugin.compose")
-    id("org.jetbrains.compose")
-}
-
-repositories {
-    google()
-    mavenCentral()
-    maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
-}
-
-val sketchVersion = "4.4.0-beta02"
-val skikoVersion = "0.144.6"
-
-configurations.all {
-    resolutionStrategy {
-        force(
-            "org.jetbrains.skiko:skiko:$skikoVersion",
-            "org.jetbrains.skiko:skiko-awt:$skikoVersion",
-            "org.jetbrains.skiko:skiko-awt-runtime-linux-x64:$skikoVersion",
-        )
-    }
+    alias(libs.plugins.kotlinJvm)
+    alias(libs.plugins.composeMultiplatform)
+    alias(libs.plugins.composeCompiler)
 }
 
 dependencies {
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
     implementation(compose.materialIconsExtended)
+    implementation(compose.components.resources)
+    implementation(libs.compose.uiToolingPreview)
 
-    implementation("com.drewnoakes:metadata-extractor:2.18.0")
+    implementation(libs.kotlinx.coroutinesSwing)
 
-    implementation("io.github.panpf.sketch4:sketch-compose:$sketchVersion")
-    implementation("io.github.panpf.sketch4:sketch-svg:$sketchVersion")
-    implementation("io.github.panpf.sketch4:sketch-animated-gif:$sketchVersion")
+    implementation(libs.sketch.compose)
+    implementation(libs.sketch.svg)
+    implementation(libs.sketch.gif)
 
-    // TwelveMonkeys ImageIO plugins — auto-register via ServiceLoader
+    implementation(libs.metadata.extractor)
+
+    implementation(libs.scrimage.core)
+    implementation(libs.scrimage.webp)
+    implementation(libs.scrimage.extra)
+
     runtimeOnly("com.twelvemonkeys.imageio:imageio-jpeg:3.13.1")
     runtimeOnly("com.twelvemonkeys.imageio:imageio-bmp:3.13.1")
     runtimeOnly("com.twelvemonkeys.imageio:imageio-tiff:3.13.1")
     runtimeOnly("com.twelvemonkeys.imageio:imageio-webp:3.13.1")
-
-    // Alternative WebP support via ImageIO
     runtimeOnly("com.github.usefulness:webp-imageio:0.10.0")
 
-    // Scrimage — image loading, processing, and format-aware saving
-    implementation("com.sksamuel.scrimage:scrimage-core:4.3.5")
-    implementation("com.sksamuel.scrimage:scrimage-webp:4.3.5")
-    implementation("com.sksamuel.scrimage:scrimage-formats-extra:4.3.5")
+    implementation(libs.sqlite.jdbc)
 
-    // SQLite for persistent gallery index cache
-    implementation("org.xerial:sqlite-jdbc:3.49.1.0")
-
-    // FileKit — native file/directory picker and cross-platform file operations
-    implementation("io.github.vinceglb:filekit-core:0.14.2")
-    implementation("io.github.vinceglb:filekit-dialogs-compose:0.14.2")
+    implementation(libs.filekit.core)
+    implementation(libs.filekit.dialogs)
 }
 
 compose.desktop {
     application {
-        mainClass = "com.soufianodev.lingallery.MainKt"
+        mainClass = "com.soufianodev.lingallery.app.MainKt"
+
         nativeDistributions {
+            targetFormats(
+                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Dmg,
+                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi,
+                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Deb
+            )
+            packageName = "com.soufianodev.lingallery"
+            packageVersion = "1.0.0"
             linux {
                 modules("jdk.security.auth")
             }
         }
+
         jvmArgs += listOf(
             "-Dskiko.renderApi=OPENGL",
             "-Dskiko.gpu.resourceCacheLimit=128M",
@@ -76,11 +64,6 @@ compose.desktop {
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
-        freeCompilerArgs.add("-Xjvm-default=all")
+        // jvm-default behavior is default in Kotlin 2.x
     }
-}
-
-tasks.withType<JavaCompile> {
-    sourceCompatibility = "21"
-    targetCompatibility = "21"
 }
