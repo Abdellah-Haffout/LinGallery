@@ -25,6 +25,9 @@ import com.github.panpf.sketch.AsyncImage
 import com.github.panpf.sketch.request.ComposableImageRequest
 import com.soufianodev.lingallery.i18n.Strings
 import com.soufianodev.lingallery.data.ImageFile
+import com.soufianodev.lingallery.data.MtpCacheManager
+import com.soufianodev.lingallery.data.isMtp
+import com.soufianodev.lingallery.data.toMtpDetails
 import com.soufianodev.lingallery.theme.DarkPalette
 import com.soufianodev.lingallery.theme.LightPalette
 
@@ -92,8 +95,20 @@ fun GalleryView(
                                 .padding(4.dp)
                                 .clickable { onImageClicked(index) }
                         ) {
+                            val imageUri = remember(image.path, image.lastModified) {
+                                if (image.path.isMtp()) {
+                                    val details = image.path.toMtpDetails()
+                                    if (details != null) {
+                                        MtpCacheManager.getMtpThumbnailCachePath(details).toUri().toString()
+                                    } else {
+                                        image.path.toUri().toString() + "?t=${image.lastModified}"
+                                    }
+                                } else {
+                                    image.path.toUri().toString() + "?t=${image.lastModified}"
+                                }
+                            }
                             AsyncImage(
-                                request = ComposableImageRequest(image.path.toUri().toString() + "?t=${image.lastModified}") {
+                                request = ComposableImageRequest(imageUri) {
                                     crossfade()
                                 },
                                 contentDescription = image.name,

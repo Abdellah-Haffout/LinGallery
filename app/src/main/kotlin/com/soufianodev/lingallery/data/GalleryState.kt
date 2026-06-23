@@ -8,7 +8,11 @@ import java.nio.file.attribute.FileTime
 import kotlin.io.path.extension
 
 internal fun normalizePath(path: Path): Path =
-    try { path.toRealPath() } catch (_: Exception) { path.toAbsolutePath().normalize() }
+    if (path.isMtp()) {
+        path.toAbsolutePath().normalize()
+    } else {
+        try { path.toRealPath() } catch (_: Exception) { path.toAbsolutePath().normalize() }
+    }
 
 sealed class Screen {
     data object Gallery : Screen()

@@ -36,8 +36,12 @@ import com.github.panpf.sketch.request.ImageResult
 import com.github.panpf.sketch.PlatformContext
 import com.github.panpf.sketch.request.Disposable
 import com.soufianodev.lingallery.data.ImageFile
+import com.soufianodev.lingallery.data.MtpCacheManager
+import com.soufianodev.lingallery.data.isMtp
+import com.soufianodev.lingallery.data.toMtpDetails
 import com.soufianodev.lingallery.i18n.Strings
 import com.soufianodev.lingallery.theme.AppConst
+import androidx.compose.material3.CircularProgressIndicator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.awaitCancellation
@@ -68,6 +72,7 @@ fun ImageViewer(
 ) {
     var painter by remember { mutableStateOf<Painter?>(null) }
     var loadError by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(false) }
     var imageWidth by remember { mutableIntStateOf(0) }
     var imageHeight by remember { mutableIntStateOf(0) }
     var prevPainter by remember { mutableStateOf<Painter?>(null) }
@@ -80,9 +85,16 @@ fun ImageViewer(
         if (path != null) {
             val generation = ++loadGeneration
             loadError = false
+            isLoading = path.isMtp()
             withContext(Dispatchers.IO) {
                 try {
-                    val uri = path.toUri().toString() + "?t=$imageLastModified"
+                    val resolvedPath = if (path.isMtp()) {
+                        MtpCacheManager.downloadFileIfNeeded(path) ?: throw Exception("Failed to download MTP file")
+                    } else {
+                        path
+                    }
+                    if (!isActive || generation != loadGeneration) return@withContext
+                    val uri = resolvedPath.toUri().toString() + "?t=$imageLastModified"
                     val result = SingletonSketch.get(PlatformContext.INSTANCE).execute(
                         ImageRequest.Builder(PlatformContext.INSTANCE, uri).build()
                     )
@@ -98,14 +110,18 @@ fun ImageViewer(
                                 imageWidth = result.imageInfo.width
                                 imageHeight = result.imageInfo.height
                                 loadError = false
+                                isLoading = false
                             }
                         }
+                    } else {
+                        throw Exception("Failed to execute image request")
                     }
                 } catch (_: CancellationException) {
                 } catch (_: Exception) {
                     withContext(Dispatchers.Main) {
                         if (generation == loadGeneration) {
                             loadError = true
+                            isLoading = false
                         }
                     }
                 }
@@ -114,6 +130,7 @@ fun ImageViewer(
             painter = null
             imageWidth = 0
             imageHeight = 0
+            isLoading = false
         }
     }
 
@@ -123,8 +140,16 @@ fun ImageViewer(
             listOf(currentIndex - 1, currentIndex + 1).forEach { idx ->
                 if (idx in images.indices) {
                     val preload = images[idx]
-                    val preloadUri = preload.path.toUri().toString()
-                    if (preloadUri != path.toUri().toString()) {
+                    val preloadUri = if (preload.path.isMtp()) {
+                        val details = preload.path.toMtpDetails()
+                        if (details != null) {
+                            val cachedPath = MtpCacheManager.getMtpFullFileCachePath(details)
+                            if (java.nio.file.Files.exists(cachedPath)) cachedPath.toUri().toString() else null
+                        } else null
+                    } else {
+                        preload.path.toUri().toString()
+                    }
+                    if (preloadUri != null && preloadUri != path.toUri().toString()) {
                         disposables.add(
                             SingletonSketch.get(PlatformContext.INSTANCE).enqueue(
                                 ImageRequest.Builder(PlatformContext.INSTANCE, preloadUri).build()
@@ -148,6 +173,11 @@ fun ImageViewer(
         contentAlignment = Alignment.Center
     ) {
         when {
+            isLoading -> {
+                CircularProgressIndicator(
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
             loadError -> {
                 Text(
                     text = Strings.Viewer.failedLoad,

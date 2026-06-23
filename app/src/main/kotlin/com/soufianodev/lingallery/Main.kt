@@ -126,6 +126,7 @@ fun LinGalleryApp(
     var slideshowActive by remember { mutableStateOf(false) }
     var pendingFileOp by remember { mutableStateOf("") }
     var statusMessage by remember { mutableStateOf(Strings.Status.scanning) }
+    var scanProgress by remember { mutableStateOf<Float?>(null) }
     var isFullscreen by remember { mutableStateOf(false) }
     var savedWindowBounds by remember { mutableStateOf<java.awt.Rectangle?>(null) }
     val scope = rememberCoroutineScope()
@@ -708,9 +709,11 @@ fun LinGalleryApp(
                 }
                 is ScanEvent.ProgressUpdate -> {
                     statusMessage = Strings.Status.progress(event.scannedDirs, event.totalImages)
+                    scanProgress = event.progress
                 }
                 is ScanEvent.ScanComplete -> {
                     state = state.sortAlbums().pruneEmptyAlbums().copy(isScanning = false)
+                    scanProgress = null
                     statusMessage = Strings.Status.summary(state.albums.size, event.totalImages)
                     withContext(Dispatchers.IO) {
                         galleryIndex.saveState(state)
@@ -720,6 +723,99 @@ fun LinGalleryApp(
         }
 
         fileWatcher.start(this)
+    }
+
+    LaunchedEffect(Unit) {
+        var lastDevices = ""
+        val successfullyScannedSerials = mutableSetOf<String>()
+
+        while (true) {
+            if (NativeScanner.isAvailable) {
+                try {
+                    val currentDevices = withContext(Dispatchers.IO) { NativeScanner.nativeMtpDetectConnectedDevices() }
+                    
+                    // Parse currently connected serials
+                    val currentSerials = currentDevices.lineSequence()
+                        .filter { it.isNotEmpty() }
+                        .map { it.split("\t").first() }
+                        .toSet()
+
+                    // 1. Remove serials that are no longer connected
+                    val removedSerials = successfullyScannedSerials.filter { it !in currentSerials }
+                    if (removedSerials.isNotEmpty()) {
+                        successfullyScannedSerials.removeAll(removedSerials)
+                        // Also remove old MTP albums for these disconnected devices
+                        val mtpAlbumsToRemove = state.albums.filter { album ->
+                            val details = album.path.toMtpDetails()
+                            details != null && details.serial in removedSerials
+                        }
+                        for (album in mtpAlbumsToRemove) {
+                            state = state.removeAlbum(album.path)
+                        }
+                    }
+
+                    // 2. Scan any connected device that hasn't been successfully scanned yet
+                    val serialsToScan = currentSerials.filter { it !in successfullyScannedSerials }
+                    if (serialsToScan.isNotEmpty()) {
+                        statusMessage = "MTP device detected, scanning..."
+                        state = state.copy(isScanning = true)
+                        val devicesToScanStr = currentDevices.lineSequence()
+                            .filter { it.isNotEmpty() && it.split("\t").first() in serialsToScan }
+                            .joinToString("\n", postfix = "\n")
+                        
+                        val mtpAlbums = withContext(Dispatchers.IO) {
+                            NativeScanner.scanMtpDevices(
+                                devicesStr = devicesToScanStr,
+                                onProgress = { scannedDirs, totalImages, currentFolder, progress ->
+                                    scope.launch(Dispatchers.Main) {
+                                        statusMessage = "Scanning MTP device: $currentFolder ($scannedDirs folders, $totalImages images)"
+                                        scanProgress = progress
+                                    }
+                                },
+                                onAlbumFound = { album ->
+                                    scope.launch(Dispatchers.Main) {
+                                        state = state.addAlbum(album)
+                                        statusMessage = "MTP device detected, found album: ${album.name}"
+                                    }
+                                }
+                            )
+                        }
+                        state = state.copy(isScanning = false)
+                        scanProgress = null
+                        if (mtpAlbums.isNotEmpty()) {
+                            statusMessage = "MTP scan complete: ${mtpAlbums.size} albums found"
+                            val successfullyScannedThisTime = mtpAlbums.mapNotNull { it.path.toMtpDetails()?.serial }.toSet()
+                            successfullyScannedSerials.addAll(successfullyScannedThisTime)
+                        } else {
+                            statusMessage = "MTP device busy/locked, retrying..."
+                        }
+                    }
+
+                    lastDevices = currentDevices
+                } catch (e: Exception) {
+                    System.err.println("[LinGallery] MTP hotplug detection failed: ${e.message}")
+                }
+            }
+            delay(3000)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        NativeScanner.thumbnailDownloadedFlow.collect { path ->
+            val albumPath = path.parent ?: return@collect
+            val idx = state.albums.indexOfFirst { it.path == albumPath }
+            if (idx >= 0) {
+                val album = state.albums[idx]
+                val imgIdx = album.images.indexOfFirst { it.path == path }
+                if (imgIdx >= 0) {
+                    val newImages = album.images.toMutableList()
+                    newImages[imgIdx] = newImages[imgIdx].copy(lastModified = System.currentTimeMillis())
+                    val newAlbums = state.albums.toMutableList()
+                    newAlbums[idx] = album.copy(images = newImages)
+                    state = state.copy(albums = newAlbums)
+                }
+            }
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -838,12 +934,24 @@ fun LinGalleryApp(
 
                                 HorizontalDivider(color = outlineVariant)
 
-                                AnimatedVisibility(visible = state.isScanning, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
-                                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                AnimatedVisibility(
+                                    visible = state.isScanning || scanProgress != null,
+                                    enter = fadeIn() + expandVertically(),
+                                    exit = fadeOut() + shrinkVertically()
+                                ) {
+                                    val currentProgress = scanProgress
+                                    if (currentProgress != null) {
+                                        LinearProgressIndicator(
+                                            progress = { currentProgress },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    } else {
+                                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                    }
                                 }
 
                                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                                    if (state.isScanning) {
+                                    if (state.isScanning && state.albums.isEmpty()) {
                                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                             Text(Strings.Status.scanningShort, color = onSurfaceVariant, fontSize = 15.sp)
                                         }

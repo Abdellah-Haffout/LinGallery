@@ -3,6 +3,7 @@ package com.soufianodev.lingallery.data
 import com.soufianodev.lingallery.theme.AppConst
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
@@ -20,7 +21,7 @@ import java.util.LinkedList
 
 sealed class ScanEvent {
     data class AlbumFound(val album: Album) : ScanEvent()
-    data class ProgressUpdate(val scannedDirs: Int, val totalImages: Int) : ScanEvent()
+    data class ProgressUpdate(val scannedDirs: Int, val totalImages: Int, val progress: Float? = null) : ScanEvent()
     data class ScanComplete(val totalImages: Int) : ScanEvent()
 }
 
@@ -58,7 +59,13 @@ class FileIndexer(
             albums.addAll(rootAlbums)
         }
 
-        val distinctAlbums = albums.distinctBy { try { it.path.toRealPath() } catch (_: Exception) { it.path.normalize() } }
+        val distinctAlbums = albums.distinctBy {
+            if (it.path.isMtp()) {
+                it.path.normalize()
+            } else {
+                try { it.path.toRealPath() } catch (_: Exception) { it.path.normalize() }
+            }
+        }
         ScanResult(distinctAlbums, distinctAlbums.size, totalImages)
     }
 
@@ -73,6 +80,7 @@ class FileIndexer(
                 var totalImages = 0
                 var scannedDirs = 0
 
+                // Emit local albums immediately
                 for (album in albums) {
                     scannedDirs++
                     totalImages += album.images.size
@@ -82,9 +90,40 @@ class FileIndexer(
                     }
                 }
 
+                // Scan MTP devices progressively and emit immediately
+                val mtpChannel = kotlinx.coroutines.channels.Channel<ScanEvent>(kotlinx.coroutines.channels.Channel.UNLIMITED)
+                coroutineScope {
+                    launch(Dispatchers.IO) {
+                        try {
+                            NativeScanner.scanMtpDevices(
+                                onProgress = { scannedDirsMtp, totalImagesMtp, currentFolder, progress ->
+                                    mtpChannel.trySend(ScanEvent.ProgressUpdate(
+                                        scannedDirs = scannedDirs + scannedDirsMtp,
+                                        totalImages = totalImages + totalImagesMtp,
+                                        progress = progress
+                                    ))
+                                },
+                                onAlbumFound = { mtpAlbum ->
+                                    scannedDirs++
+                                    totalImages += mtpAlbum.images.size
+                                    mtpChannel.trySend(ScanEvent.AlbumFound(mtpAlbum))
+                                }
+                            )
+                        } catch (e: Exception) {
+                            System.err.println("[LinGallery] Progressive MTP scan failed: ${e.message}")
+                        } finally {
+                            mtpChannel.close()
+                        }
+                    }
+
+                    for (event in mtpChannel) {
+                        emit(event)
+                    }
+                }
+
                 emit(ScanEvent.ProgressUpdate(scannedDirs, totalImages))
                 emit(ScanEvent.ScanComplete(totalImages))
-                println("[LinGallery] Native scan complete: $scannedDirs albums, $totalImages images")
+                println("[LinGallery] Native scan complete: $scannedDirs albums (including MTP), $totalImages images")
                 return@flow
             } catch (e: Exception) {
                 System.err.println("[LinGallery] Native scan failed, falling back to Kotlin scanner: ${e.message}")

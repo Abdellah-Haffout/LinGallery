@@ -10,3 +10,8 @@ crate-type = ["cdylib"]
 [dependencies]
 jni = { version = "0.21", default-features = false }
 jwalk = "0.8"
+mtp-rs = "0.20.0"
+nusb = "0.2.4"
+tokio = { version = "1", features = ["full"] }
+chrono = "0.4"
+
