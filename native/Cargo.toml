@@ -5,7 +5,7 @@ edition = "2021"
 
 [lib]
 name = "lingallery_native"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 jni = { version = "0.21", default-features = false }

@@ -56,7 +56,7 @@ object NativeScanner {
     external fun nativeMtpGetDeviceStorages(serial: String): String
 
     @JvmStatic
-    external fun nativeMtpScanDevice(serial: String, storageId: Int, model: String, callback: MtpScanCallback)
+    external fun nativeMtpScanDevice(serial: String, storageId: Int, model: String, deepScan: Boolean, callback: MtpScanCallback)
 
     @JvmStatic
     external fun nativeMtpDownloadThumbnail(serial: String, storageId: Int, handle: Int, cachePath: String): Boolean
@@ -143,6 +143,7 @@ object NativeScanner {
 
     fun scanMtpDevices(
         devicesStr: String? = null,
+        deepScan: Boolean = false,
         onProgress: (scannedDirs: Int, totalImages: Int, currentFolderName: String, progress: Float) -> Unit = { _, _, _, _ -> },
         onAlbumFound: (Album) -> Unit = {}
     ): List<Album> {
@@ -178,6 +179,7 @@ object NativeScanner {
                     serial = serial,
                     storageId = storageId,
                     model = model,
+                    deepScan = deepScan,
                     callback = object : MtpScanCallback {
                         override fun onProgress(
                             scannedDirs: Int,
